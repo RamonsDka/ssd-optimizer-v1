@@ -1,0 +1,100 @@
+// Prisma schema for SDD Team Optimizer
+// DB: PostgreSQL — managed via Docker Compose
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Model + Provider ─────────────────────────────────────────────────────────
+
+model Provider {
+  id      String  @id // e.g. "openai", "anthropic"
+  name    String
+  logoUrl String?
+  models  Model[]
+
+  @@map("providers")
+}
+
+model Model {
+  id             String   @id // e.g. "anthropic/claude-sonnet-4-5"
+  name           String
+  providerId     String
+  provider       Provider @relation(fields: [providerId], references: [id])
+  tier           Tier
+  contextWindow  Int
+  costPer1M      Float    @default(0)
+  strengths      String[]
+  discoveredByAI Boolean  @default(false)
+  updatedAt      DateTime @updatedAt
+
+  selections ModelSelection[]
+
+  @@map("models")
+}
+
+// ─── Optimization Jobs ────────────────────────────────────────────────────────
+
+model OptimizationJob {
+  id         String    @id @default(cuid())
+  userInput  String    @db.Text
+  results    Json      // TeamRecommendation JSON
+  status     JobStatus @default(PENDING)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  selections ModelSelection[]
+
+  @@map("optimization_jobs")
+}
+
+model ModelSelection {
+  id        String          @id @default(cuid())
+  jobId     String
+  job       OptimizationJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  modelId   String
+  model     Model           @relation(fields: [modelId], references: [id])
+  phase     Int             // SDD phase number 1-10
+  tier      Tier
+  reasoning String          @db.Text
+  score     Float           @default(0)
+  createdAt DateTime        @default(now())
+
+  @@map("model_selections")
+}
+
+// ─── Phase Recommendations (cached) ───────────────────────────────────────────
+
+model PhaseRecommendation {
+  id        String   @id @default(cuid())
+  phase     Int      // 1-10 SDD phases
+  modelId   String
+  tier      Tier
+  rationale String?  @db.Text
+  reasoning String   @db.Text
+  score     Float    @default(0)
+  updatedAt DateTime @updatedAt
+
+  @@unique([phase, modelId, tier])
+  @@map("phase_recommendations")
+}
+
+// ─── Enums ────────────────────────────────────────────────────────────────────
+
+enum Tier {
+  PREMIUM
+  BALANCED
+  ECONOMIC
+}
+
+enum JobStatus {
+  PENDING
+  OPTIMIZING
+  COMPLETED
+  FAILED
+}
