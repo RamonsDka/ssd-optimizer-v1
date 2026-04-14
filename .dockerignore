@@ -1,0 +1,42 @@
+# ─── Docker ignore ────────────────────────────────────────────────────────────
+# Excludes files that should not be sent to the Docker build context.
+
+# Build artifacts
+.next/
+out/
+build/
+dist/
+
+# Dependencies (installed fresh inside the container)
+node_modules/
+
+# Development files
+.env*
+!.env.example
+*.log
+npm-debug.log*
+
+# Version control
+.git/
+.gitignore
+
+# IDE / OS files
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Test / coverage
+coverage/
+__tests__/
+*.test.ts
+*.spec.ts
+
+# SDD / project docs (not needed at runtime)
+openspec/
+_vite_old/
+documentos-para-contexto/
+*.md
+
+# Prisma migrations (applied separately, not baked into image)
+prisma/migrations/
