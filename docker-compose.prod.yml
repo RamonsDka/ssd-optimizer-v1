@@ -1,0 +1,73 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: sdd_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: sdd_user
+      POSTGRES_PASSWORD: sdd_password
+      POSTGRES_DB: sdd_optimizer
+    ports:
+      - "5435:5432"
+    volumes:
+      - sdd_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sdd_user -d sdd_optimizer"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - sdd_net
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: sdd_optimizer_app
+    restart: unless-stopped
+    environment:
+      - DATABASE_URL=postgresql://sdd_user:sdd_password@postgres:5432/sdd_optimizer?schema=public
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      - NEXT_PUBLIC_APP_URL=http://sdd.rdktech.us
+      - NODE_ENV=production
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/api/settings || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    networks:
+      - sdd_net
+
+  nginx:
+    image: nginx:alpine
+    container_name: sdd_nginx
+    restart: unless-stopped
+    ports:
+      - "6321:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      app:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:80/ || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    networks:
+      - sdd_net
+
+volumes:
+  sdd_postgres_data:
+    driver: local
+
+networks:
+  sdd_net:
+    driver: bridge
