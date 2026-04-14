@@ -1,6 +1,6 @@
 <div align="center">
 
-![SDD Team Optimizer — Hero](https://raw.githubusercontent.com/RamonsDka/ssd-optimizer-v1/master/public/panel.jpeg)
+![SDD Team Optimizer — Hero]([https://raw.githubusercontent.com/RamonsDka/ssd-optimizer-v1/master/public/panel.jpeg](https://i.ibb.co/Wvr4QGyJ/image1.jpg)
 
 # SDD Team Optimizer
 
