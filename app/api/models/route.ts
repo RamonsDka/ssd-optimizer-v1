@@ -149,6 +149,7 @@ export async function GET(
           costPer1M: r.cost_per1m,
           strengths: r.strengths ?? [],
           discoveredByAI: r.discovered_by_ai,
+          lastSyncedAt: null,
           updatedAt: new Date(),
           provider: { id: r.provider_id, name: r.provider_id, logoUrl: null, models: [] },
           selections: [],

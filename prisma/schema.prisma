@@ -54,19 +54,20 @@ model LMArenaCategory {
 }
 
 model LMArenaScore {
-  id         String          @id @default(cuid())
-  modelId    String
-  model      Model           @relation(fields: [modelId], references: [id], onDelete: Cascade)
-  categoryId String
-  category   LMArenaCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
-  rank       Int?
-  score      Float
-  votes      Int?
-  ci         String?         // Confidence Interval e.g. "+5/-5"
-  license    String?
-  syncedAt   DateTime        @default(now())
+  id                      String          @id @default(cuid())
+  modelId                 String
+  model                   Model           @relation(fields: [modelId], references: [id], onDelete: Cascade)
+  categoryId              String
+  category                LMArenaCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  leaderboardPublishDate  DateTime        // Source of truth from dataset
+  rank                    Int?
+  score                   Float
+  votes                   Int?
+  ci                      String?         // Confidence Interval e.g. "+5/-5"
+  license                 String?
+  syncedAt                DateTime        @default(now())
 
-  @@unique([modelId, categoryId])
+  @@unique([modelId, categoryId, leaderboardPublishDate])
   @@map("lm_arena_scores")
 }
 

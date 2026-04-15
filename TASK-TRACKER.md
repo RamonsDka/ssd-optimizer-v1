@@ -201,7 +201,7 @@
   - Tiempo: 10 min
   
 - [ ] 1.2.2 Implementar `fetchLeaderboard(category: string)`
-  - Fetch a API de LM Arena
+  - Fetch a dataset HF (usar columna `leaderboard_publish_date`)
   - Manejo de errores
   - Timeout de 30s
   - Tiempo: 30 min
@@ -263,9 +263,8 @@
   
 - [ ] 1.4.2 Crear `lib/sync/lmarena-sync.ts`
   - Función `syncLMArenaData()`
-  - Fetch de todas las categorías
-  - Procesamiento de modelos
-  - Upsert en DB
+  - Fetch de categorías (usar `leaderboard_publish_date` como source date)
+  - Procesamiento de modelos y Upsert por fecha/id (idempotencia real)
   - Tiempo: 40 min
   
 - [ ] 1.4.3 Crear `lib/sync/cron-scheduler.ts`
