@@ -299,10 +299,10 @@ function ModelCard({ model, onClick }: { model: ModelRecord; onClick?: () => voi
           <div className="space-y-1">
             <h3
               className={cn(
-                "font-bold text-lg text-on-surface transition-colors truncate max-w-[180px]",
+                "font-bold text-lg text-on-surface transition-colors break-words leading-tight",
                 isPremium ? "group-hover:text-secondary" : "group-hover:text-primary"
               )}
-              title={model.id}
+              title={model.name}
             >
               {model.name}
             </h3>

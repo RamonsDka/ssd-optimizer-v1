@@ -8,10 +8,11 @@
 // - GuideSteps shown BEFORE results arrive, hidden once recommendation exists.
 // - useOptimizerPersistence: result survives page navigation via localStorage.
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Trash2 } from "lucide-react";
 import InputModule from "@/components/optimizer/InputModule";
+import { ViewModeSelector, type ViewMode } from "@/components/shared/ViewModeSelector";
 import ProfileSelector from "@/components/optimizer/ProfileSelector";
 import DataMatrix from "@/components/optimizer/DataMatrix";
 import ComparisonTable from "@/components/optimizer/ComparisonTable";
@@ -20,13 +21,26 @@ import PhaseDetailModal from "@/components/optimizer/PhaseDetailModal";
 import GuideSteps from "@/components/optimizer/GuideSteps";
 import { useOptimizerPersistence } from "@/lib/hooks/useOptimizerPersistence";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
+import { getSessionKey } from "@/lib/session/session-manager";
 import type { Tier, PhaseAssignment, SddPhase } from "@/types";
 
 export default function OptimizerPage() {
   const { recommendation, save, clear, isHydrating } = useOptimizerPersistence();
   const { t, lang } = useLanguage();
   const [activeTier, setActiveTier] = useState<Tier>("BALANCED");
+  const [viewMode, setViewMode] = useState<ViewMode>("grid");
   const [error, setError] = useState<string | null>(null);
+  
+  useEffect(() => {
+    const sessionKey = getSessionKey("viewMode");
+    const saved = localStorage.getItem(sessionKey) as ViewMode | null;
+    if (saved) setViewMode(saved);
+  }, []);
+
+  useEffect(() => {
+    const sessionKey = getSessionKey("viewMode");
+    localStorage.setItem(sessionKey, viewMode);
+  }, [viewMode]);
   const [loadingProfiles, setLoadingProfiles] = useState(false);
   const [selectedPhase, setSelectedPhase] = useState<SddPhase | null>(null);
   const [selectedPhaseAssignment, setSelectedPhaseAssignment] = useState<PhaseAssignment | null>(null);
@@ -99,6 +113,10 @@ export default function OptimizerPage() {
 
       {/* ── Step 1: Input ────────────────────────────────────────────────────── */}
       <InputModule onResult={handleResult} onError={handleError} />
+      
+      {recommendation && (
+        <ViewModeSelector mode={viewMode} onChange={setViewMode} className="mb-6" />
+      )}
 
       {/* ── Inline Guide — visible ONLY while no recommendation exists ──────── */}
       <AnimatePresence>
@@ -190,6 +208,7 @@ export default function OptimizerPage() {
             <DataMatrix
               phases={activeProfile?.phases ?? []}
               tier={activeTier}
+              viewMode={viewMode}
               loading={loadingProfiles}
               onRefresh={() => {
                 // Noop — user re-submits from InputModule

@@ -12,6 +12,7 @@ import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { useCopyFeedback } from "@/lib/hooks/useCopyFeedback";
 import type { PhaseAssignment, Tier, ModelRecord } from "@/types";
 import { getPhaseLabel } from "@/types";
+import type { ViewMode } from "@/components/shared/ViewModeSelector";
 
 // ─── Static Orchestrator Model Data ───────────────────────────────────────────
 
@@ -67,6 +68,7 @@ const ORCHESTRATOR_SCORE = 1.0;
 interface DataMatrixProps {
   phases: PhaseAssignment[];
   tier: Tier;
+  viewMode: ViewMode;
   loading?: boolean;
   onRefresh?: () => void;
   onPhaseClick?: (assignment: PhaseAssignment) => void;
@@ -75,6 +77,7 @@ interface DataMatrixProps {
 export default function DataMatrix({
   phases,
   tier,
+  viewMode,
   loading = false,
   onRefresh,
   onPhaseClick,
@@ -243,20 +246,20 @@ export default function DataMatrix({
             </div>
             <div className="space-y-1.5">
               {ORCHESTRATOR_FALLBACKS.map((fb, idx) => (
-                <button
+            <button
                   key={fb.id}
                   onClick={() => setSelectedOrchestratorModel(fb)}
-                  className="w-full flex items-center justify-between bg-surface-container-highest px-3 py-1.5 hover:bg-surface-container-high transition-colors"
+                  className="w-full flex items-center justify-between bg-surface-container-highest px-3 py-1.5 hover:bg-surface-container-high transition-colors text-left"
                 >
-                  <div className="flex items-center gap-2">
-                    <span className="text-[8px] font-mono text-on-surface-variant/40">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="text-[8px] font-mono text-on-surface-variant/40 shrink-0">
                       F{idx + 1}
                     </span>
-                    <span className="font-mono text-[10px] text-on-surface truncate max-w-[140px]" title={fb.name}>
-                      {fb.name.length > 20 ? fb.name.slice(0, 18) + "…" : fb.name}
+                    <span className="font-mono text-[10px] text-on-surface break-words leading-tight" title={fb.name}>
+                      {fb.name}
                     </span>
                   </div>
-                  <span className="text-[8px] font-mono text-on-surface-variant/50 shrink-0">
+                  <span className="text-[8px] font-mono text-on-surface-variant/50 shrink-0 ml-2">
                     {(fb.contextWindow / 1000).toFixed(0)}k
                   </span>
                 </button>
@@ -277,7 +280,15 @@ export default function DataMatrix({
       />
 
       {/* 2×5 grid — gap-[1px] creates the "brutalist seam" look */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-[1px] bg-outline-variant/20">
+      <div
+        className={cn(
+          "grid gap-[1px] bg-outline-variant/20",
+          viewMode === "grid" && "grid-cols-1 md:grid-cols-2 lg:grid-cols-5",
+          viewMode === "list" && "grid-cols-1",
+          viewMode === "table" && "grid-cols-1",
+          viewMode === "compact" && "grid-cols-1 md:grid-cols-3 lg:grid-cols-6"
+        )}
+      >
         {loading
           ? Array.from({ length: 10 }).map((_, i) => (
               <PhaseCardSkeleton key={i} />

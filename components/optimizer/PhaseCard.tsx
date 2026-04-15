@@ -64,10 +64,8 @@ export default function PhaseCard({ assignment, accentTier, loading = false, onP
       ? "bg-primary"
       : "bg-outline-variant";
 
-  // Abbreviated model name for the card title
-  const shortModelName = primary.name.length > 20
-    ? primary.name.slice(0, 18) + "…"
-    : primary.name;
+  // Full model name for the card title (V2 fix: multiline)
+  const shortModelName = primary.name;
 
   // Handler for clicking on model cells (primary or fallbacks)
   const handleModelClick = (model: ModelRecord) => {
@@ -129,7 +127,7 @@ export default function PhaseCard({ assignment, accentTier, loading = false, onP
       <div className="px-6">
         <div
           className={cn(
-            "font-mono text-lg font-bold text-on-surface truncate transition-colors cursor-pointer",
+            "font-mono text-lg font-bold text-on-surface transition-colors cursor-pointer break-words leading-tight",
             `group-hover:${accentTextClass}`
           )}
           title={primary.name}
@@ -187,10 +185,10 @@ export default function PhaseCard({ assignment, accentTier, loading = false, onP
                   F{idx + 1}
                 </span>
                 <span
-                  className="font-mono text-[10px] text-on-surface truncate max-w-[120px]"
+                  className="font-mono text-[10px] text-on-surface break-words leading-tight"
                   title={fb.name}
                 >
-                  {fb.name.length > 18 ? fb.name.slice(0, 16) + "…" : fb.name}
+                  {fb.name}
                 </span>
               </div>
               <span className="text-[8px] font-mono text-on-surface-variant/50">
