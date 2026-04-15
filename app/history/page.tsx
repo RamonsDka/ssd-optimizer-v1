@@ -204,7 +204,7 @@ export default function HistoryPage() {
               >
                 {/* Model list preview */}
                 <div className="min-w-0">
-                  <p className="font-mono text-xs text-on-surface truncate">
+                  <p className="font-mono text-xs text-on-surface break-words leading-tight">
                     {job.userInput}
                   </p>
                   <p className="font-mono text-[10px] text-on-surface-variant/40 mt-0.5 uppercase tracking-widest">

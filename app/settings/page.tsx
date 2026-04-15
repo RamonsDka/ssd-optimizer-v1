@@ -24,8 +24,6 @@ import {
   Server,
   Lock,
   Monitor,
-  ExternalLink,
-  BookOpen,
   Eraser,
 } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
@@ -283,42 +281,6 @@ function RecommendationItem({ icon, title, description, priority }: Recommendati
   );
 }
 
-// ─── Recommended Toolkit Link ──────────────────────────────────────────────────
-
-interface ToolkitLinkProps {
-  icon: React.ReactNode;
-  name: string;
-  url: string;
-  description: string;
-}
-
-function ToolkitLink({ icon, name, url, description }: ToolkitLinkProps) {
-  return (
-    <a
-      href={url}
-      target="_blank"
-      rel="noopener noreferrer"
-      className={cn(
-        "flex items-start gap-4 p-5 border transition-colors group",
-        "border-outline-variant/20 bg-surface-container-low hover:border-primary/30"
-      )}
-    >
-      <span className="text-primary mt-0.5 shrink-0 group-hover:text-secondary transition-colors">
-        {icon}
-      </span>
-      <div className="flex-1 min-w-0">
-        <p className="font-mono text-xs font-bold text-on-surface uppercase tracking-widest group-hover:text-primary transition-colors">
-          {name}
-        </p>
-        <p className="font-mono text-[10px] text-on-surface-variant/70 mt-0.5 leading-relaxed">
-          {description}
-        </p>
-      </div>
-      <ExternalLink size={12} className="text-on-surface-variant/40 group-hover:text-primary transition-colors shrink-0 mt-0.5" />
-    </a>
-  );
-}
-
 // ─── Settings Page Component ─────────────────────────────────────────────────
 
 interface ActionState {
@@ -337,7 +299,7 @@ export default function SettingsPage() {
   // Admin action states keyed by action name
   const [actionStates, setActionStates] = useState<Record<AdminAction, ActionState>>({
     "clear-history": { status: "idle", message: "" },
-    "reset-stats":   { status: "idle", message: "" },
+    "reset-models":  { status: "idle", message: "" },
     "force-sync":    { status: "idle", message: "" },
   });
 
@@ -640,35 +602,6 @@ export default function SettingsPage() {
               </div>
             </section>
 
-            {/* ── Recommended Toolkit ─────────────────────────────────────────── */}
-            <section>
-              <div className="flex items-center gap-3 mb-4">
-                <div className="w-1 h-6 bg-primary" />
-                <h2 className="font-label text-xs uppercase tracking-widest text-on-surface-variant">
-                  Recommended Toolkit
-                </h2>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                <ToolkitLink
-                  icon={<Database size={14} />}
-                  name="Prisma"
-                  url="https://www.prisma.io/docs"
-                  description="Next-gen ORM for Node.js & TypeScript. Database access, migrations, and studio — all type-safe."
-                />
-                <ToolkitLink
-                  icon={<Layers size={14} />}
-                  name="Tailwind CSS"
-                  url="https://tailwindcss.com/docs"
-                  description="Utility-first CSS framework. Build modern, responsive interfaces directly in your markup."
-                />
-                <ToolkitLink
-                  icon={<Zap size={14} />}
-                  name="Framer Motion"
-                  url="https://motion.dev/docs"
-                  description="Production-ready animation library for React. Declarative animations, gestures, and layout transitions."
-                />
-              </div>
-            </section>
 
             {/* ── System Actions ────────────────────────────────────────────── */}
             <section>
@@ -812,14 +745,14 @@ export default function SettingsPage() {
                   lastMessage={actionStates["clear-history"].message}
                 />
                 <AdminActionButton
-                  action="reset-stats"
-                  label="Reset AI Models"
-                  description="Elimina todos los modelos descubiertos por IA. Conserva el seed manual."
+                  action="reset-models"
+                  label="Reset Models"
+                  description="Elimina todos los modelos y proveedores. Usar con precaución."
                   icon={<RotateCcw size={16} />}
                   dangerous
                   onAction={handleAdminAction}
-                  status={actionStates["reset-stats"].status}
-                  lastMessage={actionStates["reset-stats"].message}
+                  status={actionStates["reset-models"]?.status ?? "idle"}
+                  lastMessage={actionStates["reset-models"]?.message ?? ""}
                 />
                 <AdminActionButton
                   action="force-sync"

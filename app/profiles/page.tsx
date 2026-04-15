@@ -1,7 +1,7 @@
 "use client";
 
 // ─── Profiles Page ────────────────────────────────────────────────────────────
-// User preferences: Default Tier, Theme, Language, API Keys.
+// User preferences: Default Tier, Theme, Language.
 // All preferences are persisted in localStorage.
 
 import { useState, useEffect, useCallback } from "react";
@@ -10,7 +10,6 @@ import {
   Globe,
   Palette,
   Cpu,
-  Key,
   Save,
   CheckCircle,
   ChevronDown,
@@ -23,8 +22,6 @@ import type { Tier } from "@/types";
 
 const LS_TIER = "sdd-profiles-default-tier";
 const LS_THEME = "sdd-profiles-theme";
-const LS_GEMINI_KEY = "sdd-profiles-gemini-key";
-const LS_OPENROUTER_KEY = "sdd-profiles-openrouter-key";
 
 // ─── Tier options ────────────────────────────────────────────────────────────
 
@@ -44,8 +41,6 @@ export default function ProfilesPage() {
 
   const [defaultTier, setDefaultTier] = useState<Tier>("BALANCED");
   const [theme, setTheme] = useState<"dark" | "light">("dark");
-  const [geminiKey, setGeminiKey] = useState("");
-  const [openrouterKey, setOpenrouterKey] = useState("");
   const [saved, setSaved] = useState(false);
   const [tierDropdownOpen, setTierDropdownOpen] = useState(false);
 
@@ -60,10 +55,6 @@ export default function ProfilesPage() {
       if (storedTheme === "light" || storedTheme === "dark") {
         setTheme(storedTheme);
       }
-      const storedGemini = localStorage.getItem(LS_GEMINI_KEY);
-      if (storedGemini) setGeminiKey(storedGemini);
-      const storedOpenrouter = localStorage.getItem(LS_OPENROUTER_KEY);
-      if (storedOpenrouter) setOpenrouterKey(storedOpenrouter);
     } catch {
       // ignore
     }
@@ -73,14 +64,12 @@ export default function ProfilesPage() {
     try {
       localStorage.setItem(LS_TIER, defaultTier);
       localStorage.setItem(LS_THEME, theme);
-      localStorage.setItem(LS_GEMINI_KEY, geminiKey);
-      localStorage.setItem(LS_OPENROUTER_KEY, openrouterKey);
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
     } catch {
       // localStorage unavailable
     }
-  }, [defaultTier, theme, geminiKey, openrouterKey]);
+  }, [defaultTier, theme]);
 
   const selectedTierOption = TIER_OPTIONS.find((opt) => opt.value === defaultTier)!;
 
@@ -253,57 +242,6 @@ export default function ProfilesPage() {
           </div>
         </section>
 
-        {/* ── API Keys ───────────────────────────────────────────────── */}
-        <section>
-          <div className="flex items-center gap-3 mb-4">
-            <div className="w-1 h-6 bg-tertiary" />
-            <h2 className="font-label text-xs uppercase tracking-widest text-on-surface-variant flex items-center gap-2">
-              <Key size={14} className="text-secondary" />
-              {t("profiles", "apiKeysSection")}
-            </h2>
-          </div>
-          <div className="border border-outline-variant/20 bg-surface-container-low px-6 py-5">
-            <p className="font-mono text-[10px] text-on-surface-variant/60 mb-4 uppercase tracking-widest">
-              {t("profiles", "apiKeysDesc")}
-            </p>
-
-            <div className="space-y-4">
-              <div>
-                <label className="font-mono text-[10px] text-on-surface-variant/50 uppercase tracking-widest block mb-1">
-                  {t("profiles", "geminiApiKey")}
-                </label>
-                <input
-                  type="password"
-                  value={geminiKey}
-                  onChange={(e) => setGeminiKey(e.target.value)}
-                  placeholder="AIzaSy..."
-                  className="w-full bg-surface-container border border-outline-variant/20 px-4 py-2 font-mono text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:border-primary/50 focus:outline-none transition-colors"
-                />
-              </div>
-
-              <div>
-                <label className="font-mono text-[10px] text-on-surface-variant/50 uppercase tracking-widest block mb-1">
-                  {t("profiles", "openrouterApiKey")}
-                </label>
-                <input
-                  type="password"
-                  value={openrouterKey}
-                  onChange={(e) => setOpenrouterKey(e.target.value)}
-                  placeholder="sk-or-..."
-                  className="w-full bg-surface-container border border-outline-variant/20 px-4 py-2 font-mono text-sm text-on-surface placeholder:text-on-surface-variant/30 focus:border-primary/50 focus:outline-none transition-colors"
-                />
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* ── Info Note ──────────────────────────────────────────────── */}
-        <div className="p-5 bg-surface-container-lowest border-l-4 border-outline-variant text-on-surface-variant text-sm italic leading-relaxed">
-          <span className="not-italic font-mono text-xs text-on-surface-variant/60 uppercase tracking-widest mr-2">
-            ℹ
-          </span>
-          {t("profiles", "infoNote")}
-        </div>
       </div>
     </div>
   );

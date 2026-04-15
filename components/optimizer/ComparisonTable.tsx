@@ -212,11 +212,9 @@ export default function ComparisonTable({
                   </td>
 
                   {/* Top model */}
-                  <td className="px-6 py-4 text-on-surface-variant truncate max-w-[160px]">
+                  <td className="px-6 py-4 text-on-surface-variant break-words leading-tight max-w-[160px]">
                     <span title={row.topModel}>
-                      {row.topModel.length > 24
-                        ? row.topModel.slice(0, 22) + "…"
-                        : row.topModel}
+                      {row.topModel}
                     </span>
                   </td>
 

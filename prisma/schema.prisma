@@ -25,32 +25,63 @@ model Model {
   id             String   @id // e.g. "anthropic/claude-sonnet-4-5"
   name           String
   providerId     String
-  provider       Provider @relation(fields: [providerId], references: [id])
+  provider       Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
   tier           Tier
   contextWindow  Int
   costPer1M      Float    @default(0)
   strengths      String[]
   discoveredByAI Boolean  @default(false)
+  lastSyncedAt   DateTime? // For LM Arena sync tracking
   updatedAt      DateTime @updatedAt
 
-  selections ModelSelection[]
+  selections  ModelSelection[]
+  arenaScores LMArenaScore[]
 
   @@map("models")
 }
 
-// ─── Optimization Jobs ────────────────────────────────────────────────────────
+// ─── LM Arena Integration ───────────────────────────────────────────────────
 
-model OptimizationJob {
-  id         String    @id @default(cuid())
-  userInput  String    @db.Text
-  results    Json      // TeamRecommendation JSON
-  status     JobStatus @default(PENDING)
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
+model LMArenaCategory {
+  id          String   @id // slug e.g. "coding", "long-context"
+  name        String
+  description String?
+  updatedAt   DateTime @updatedAt
 
-  selections ModelSelection[]
+  scores LMArenaScore[]
 
-  @@map("models")
+  @@map("lm_arena_categories")
+}
+
+model LMArenaScore {
+  id         String          @id @default(cuid())
+  modelId    String
+  model      Model           @relation(fields: [modelId], references: [id], onDelete: Cascade)
+  categoryId String
+  category   LMArenaCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  rank       Int?
+  score      Float
+  votes      Int?
+  ci         String?         // Confidence Interval e.g. "+5/-5"
+  license    String?
+  syncedAt   DateTime        @default(now())
+
+  @@unique([modelId, categoryId])
+  @@map("lm_arena_scores")
+}
+
+model SyncLog {
+  id           String   @id @default(cuid())
+  type         String   // "LMARENA" | "OPENROUTER"
+  status       String   // "SUCCESS" | "FAILED" | "PARTIAL"
+  totalModels  Int
+  upserted     Int
+  errors       Int
+  errorDetails String?  @db.Text
+  durationMs   Int
+  createdAt    DateTime @default(now())
+
+  @@map("sync_logs")
 }
 
 // ─── Optimization Jobs ────────────────────────────────────────────────────────

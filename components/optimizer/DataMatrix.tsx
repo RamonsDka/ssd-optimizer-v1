@@ -6,6 +6,7 @@
 import { useState } from "react";
 import { RefreshCw, Download, Copy, Check } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
+import { cn } from "@/lib/utils/cn";
 import PhaseCard, { PhaseCardSkeleton } from "./PhaseCard";
 import ModelDetailModal from "./ModelDetailModal";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
@@ -215,7 +216,7 @@ export default function DataMatrix({
               className="text-left w-full group/primary"
               title="Ver detalles del modelo"
             >
-              <div className="font-mono text-lg font-black text-on-surface group-hover/primary:text-secondary transition-colors truncate">
+              <div className="font-mono text-lg font-black text-on-surface group-hover/primary:text-secondary transition-colors break-words leading-tight hyphens-auto">
                 {ORCHESTRATOR_PRIMARY.name}
               </div>
               <div className="font-mono text-[9px] text-on-surface-variant/50 mt-0.5">
@@ -255,7 +256,7 @@ export default function DataMatrix({
                     <span className="text-[8px] font-mono text-on-surface-variant/40 shrink-0">
                       F{idx + 1}
                     </span>
-                    <span className="font-mono text-[10px] text-on-surface break-words leading-tight" title={fb.name}>
+                    <span className="font-mono text-[10px] text-on-surface break-words leading-tight hyphens-auto" title={fb.name}>
                       {fb.name}
                     </span>
                   </div>

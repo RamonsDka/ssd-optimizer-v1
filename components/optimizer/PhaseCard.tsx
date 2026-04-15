@@ -127,7 +127,7 @@ export default function PhaseCard({ assignment, accentTier, loading = false, onP
       <div className="px-6">
         <div
           className={cn(
-            "font-mono text-lg font-bold text-on-surface transition-colors cursor-pointer break-words leading-tight",
+            "font-mono text-lg font-bold text-on-surface transition-colors cursor-pointer break-words leading-tight hyphens-auto",
             `group-hover:${accentTextClass}`
           )}
           title={primary.name}
@@ -185,7 +185,7 @@ export default function PhaseCard({ assignment, accentTier, loading = false, onP
                   F{idx + 1}
                 </span>
                 <span
-                  className="font-mono text-[10px] text-on-surface break-words leading-tight"
+                  className="font-mono text-[10px] text-on-surface break-words leading-tight hyphens-auto"
                   title={fb.name}
                 >
                   {fb.name}

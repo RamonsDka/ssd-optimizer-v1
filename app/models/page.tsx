@@ -299,7 +299,7 @@ function ModelCard({ model, onClick }: { model: ModelRecord; onClick?: () => voi
           <div className="space-y-1">
             <h3
               className={cn(
-                "font-bold text-lg text-on-surface transition-colors break-words leading-tight",
+                "font-bold text-lg text-on-surface transition-colors break-words leading-tight hyphens-auto",
                 isPremium ? "group-hover:text-secondary" : "group-hover:text-primary"
               )}
               title={model.name}
@@ -425,7 +425,7 @@ function MatrixRow({ model }: { model: ModelRecord }) {
 
   return (
     <tr className="border-b border-outline-variant/5 hover:bg-surface-container-highest/50 transition-colors">
-      <td className="px-6 py-4 max-w-[160px] truncate" title={model.id}>
+      <td className="px-6 py-4 max-w-[160px] break-words leading-tight" title={model.id}>
         {model.id.length > 28 ? model.id.slice(0, 26) + "…" : model.id}
       </td>
       <td className={cn("px-6 py-4", TIER_ACCENT[model.tier])}>{model.tier}</td>
@@ -444,7 +444,7 @@ function MatrixRow({ model }: { model: ModelRecord }) {
       >
         ${model.costPer1M.toFixed(2)}
       </td>
-      <td className="px-6 py-4 text-on-surface-variant max-w-[200px] truncate">
+      <td className="px-6 py-4 text-on-surface-variant max-w-[200px] break-words leading-tight hyphens-auto" title={model.name}>
         {model.strengths.slice(0, 3).join(", ") || "—"}
       </td>
       <td className="px-6 py-4">

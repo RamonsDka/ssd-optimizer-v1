@@ -207,7 +207,7 @@ export default function LogDetailModal({ jobId, onClose }: LogDetailModalProps) 
                     </span>
                     <div className="min-w-0 flex items-center gap-2">
                       <Cpu size={10} className="text-on-surface-variant/40 shrink-0" />
-                      <span className="font-mono text-xs text-on-surface truncate" title={sel.modelName}>
+                      <span className="font-mono text-xs text-on-surface break-words leading-tight" title={sel.modelName}>
                         {sel.modelName}
                       </span>
                     </div>

@@ -238,7 +238,7 @@ function PhaseModelRow({ model, tier }: { model: PhaseModelEntry; tier: Tier }) 
       <div className="min-w-0">
         <div className="flex items-center gap-1.5">
           <Cpu size={10} className="text-on-surface-variant/40 shrink-0" />
-          <span className="font-mono text-xs text-on-surface truncate" title={model.modelId}>
+          <span className="font-mono text-xs text-on-surface break-words leading-tight" title={model.modelId}>
             {model.modelName}
           </span>
         </div>

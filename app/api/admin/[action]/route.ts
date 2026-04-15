@@ -2,8 +2,8 @@
 // Admin action dispatcher. Handles maintenance operations.
 //
 // Supported actions:
-//   clear-history  — Deletes all OptimizationJob records (and cascades ModelSelections)
-//   reset-stats    — Resets counters / deletes AI-discovered models not in seed
+//   clear-history  — Deletes all OptimizationJob records (cascades ModelSelections via schema)
+//   reset-models   — Deletes all providers (cascades models and selections via schema)
 //   force-sync     — Triggers OpenRouter model sync (same as POST /api/sync)
 //
 // WARNING: These are destructive operations. No auth guard (dev tool).
@@ -18,7 +18,7 @@ export const maxDuration = 60;
 
 // ─── Response types ───────────────────────────────────────────────────────────
 
-export type AdminAction = "clear-history" | "reset-stats" | "force-sync";
+export type AdminAction = "clear-history" | "reset-models" | "force-sync";
 
 export interface AdminActionResponse {
   success: true;
@@ -40,22 +40,23 @@ async function handleClearHistory(): Promise<AdminActionResponse> {
   return {
     success: true,
     action: "clear-history",
-    message: `Deleted ${deleted.count} optimization job(s) and their model selections.`,
+    message: `Historial eliminado: ${deleted.count} consultas y sus selecciones asociadas.`,
     affected: deleted.count,
   };
 }
 
-async function handleResetStats(): Promise<AdminActionResponse> {
-  // Remove AI-discovered models that were not part of the original seed data.
-  // We identify them by the `discoveredByAI` flag.
-  const deleted = await prisma.model.deleteMany({
-    where: { discoveredByAI: true },
-  });
+async function handleResetModels(): Promise<AdminActionResponse> {
+  // 1. Delete all providers (this cascades to models and their selections)
+  const deletedProviders = await prisma.provider.deleteMany({});
+  
+  // 2. Note: seeding should be done manually or via a separate trigger 
+  // if we want to restore the reference models.
+  
   return {
     success: true,
-    action: "reset-stats",
-    message: `Removed ${deleted.count} AI-discovered model(s). Seed data retained.`,
-    affected: deleted.count,
+    action: "reset-models",
+    message: `Catálogo reseteado: ${deletedProviders.count} proveedores (y todos sus modelos) eliminados.`,
+    affected: deletedProviders.count,
   };
 }
 
@@ -82,8 +83,8 @@ export async function POST(
       case "clear-history":
         return NextResponse.json(await handleClearHistory());
 
-      case "reset-stats":
-        return NextResponse.json(await handleResetStats());
+      case "reset-models":
+        return NextResponse.json(await handleResetModels());
 
       case "force-sync":
         return NextResponse.json(await handleForceSync());
@@ -92,7 +93,7 @@ export async function POST(
         return NextResponse.json(
           {
             success: false,
-            error: `Unknown action: "${action}". Valid actions: clear-history, reset-stats, force-sync.`,
+            error: `Unknown action: "${action}". Valid actions: clear-history, reset-models, force-sync.`,
           },
           { status: 400 }
         );
