@@ -69,6 +69,7 @@ export interface ModelRecord {
   costPer1M: number;
   strengths: string[];
   discoveredByAI: boolean;
+  lastSyncedAt?: Date | null;
 }
 
 // ─── Gemini AI Categorization ──────────────────────────────────────────────
@@ -111,6 +112,7 @@ export interface TeamRecommendation {
   inputModels: ParsedModel[];
   unresolvedModels: string[];
   generatedAt: string;
+  jobId?: string;
 }
 
 // ─── API Payloads ──────────────────────────────────────────────────────────
@@ -121,6 +123,7 @@ export interface OptimizeRequest {
 
 export interface OptimizeResponse {
   success: true;
+  jobId: string;
   data: TeamRecommendation;
 }
 
@@ -140,4 +143,32 @@ export interface ModelsLookupResponse {
   success: true;
   data: ModelRecord[];
   total: number;
+}
+
+// ─── Deploy API ────────────────────────────────────────────────────────────
+
+export interface DeployRequest {
+  jobId: string;
+  tier: Tier;
+}
+
+export interface DeploySelection {
+  phase: SddPhase;
+  modelId: string;
+  action: "applied" | "skipped";
+  reason?: string;
+}
+
+export interface DeployResponse {
+  success: true;
+  jobId: string;
+  tier: Tier;
+  selections: DeploySelection[];
+  appliedCount: number;
+  skippedCount: number;
+}
+
+export interface DeployErrorResponse {
+  success: false;
+  error: string;
 }

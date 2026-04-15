@@ -13,7 +13,9 @@
     "db:studio": "prisma studio",
     "db:seed": "tsx prisma/seed.ts",
     "sync:openrouter": "tsx lib/sync/openrouter-sync.ts",
-    "sync:openrouter:commit": "tsx lib/sync/openrouter-sync.ts --commit"
+    "sync:openrouter:commit": "tsx lib/sync/openrouter-sync.ts --commit",
+    "sync:lmarena": "tsx lib/sync/lmarena-sync.ts",
+    "sync:lmarena:commit": "tsx lib/sync/lmarena-sync.ts --commit"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

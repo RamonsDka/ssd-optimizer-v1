@@ -127,7 +127,7 @@ export async function POST(
     const dbFallback: ModelRecord[] = allDbModels.map(prismaToModelRecord);
 
     // 7. Generate profiles
-    const recommendation = generateProfiles(
+    const recommendation = await generateProfiles(
       inputModels,
       dbFallback,
       parsed,
@@ -135,7 +135,7 @@ export async function POST(
     );
 
     // 8. Persist optimization job
-    await prisma.optimizationJob.create({
+    const job = await prisma.optimizationJob.create({
       data: {
         userInput: modelList,
         results: recommendation as object,
@@ -143,7 +143,7 @@ export async function POST(
       },
     });
 
-    return NextResponse.json({ success: true, data: recommendation });
+    return NextResponse.json({ success: true, jobId: job.id, data: recommendation });
   } catch (err) {
     console.error("[POST /api/optimize] Error:", err);
     const message = err instanceof Error ? err.message : "Internal server error";

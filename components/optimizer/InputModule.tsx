@@ -50,7 +50,9 @@ export default function InputModule({ onResult, onError }: InputModuleProps) {
         return;
       }
 
-      onResult(json.data as TeamRecommendation);
+      const result = json.data as TeamRecommendation;
+      result.jobId = json.jobId;
+      onResult(result);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Error de red desconocido";
       onError(msg);

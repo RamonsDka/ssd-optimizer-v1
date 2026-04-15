@@ -11,6 +11,7 @@ import type {
 } from "@/types";
 import { SDD_PHASES, SDD_PHASE_LABELS } from "@/types";
 import type { ParsedModel } from "@/types";
+import * as ScoringV2 from "./scoring-engine-v2";
 
 // ─── Phase Weights — per-phase capability priorities ─────────────────────────
 // Keys align to ModelRecord.strengths tags
@@ -59,6 +60,17 @@ const CONTEXT_MIN_INIT = 100_000; // sdd-init requires 100k minimum
 
 const MAX_PRIMARY_USES_PER_MODEL = 2; // prevent a single model dominating all phases
 
+// ─── Scoring Version Config ───────────────────────────────────────────────────
+// V2 is the active scoring engine (LM Arena-based).
+// V1 is kept for comparison/analysis only (scoreModelV1 function below).
+
+export interface ScoringConfig {
+  version: "v1" | "v2";
+  arenaScoresCache?: Map<string, Map<string, ScoringV2.ArenaScoreData>>; // Pre-fetched arena scores for V2
+}
+
+const DEFAULT_CONFIG: ScoringConfig = { version: "v2" };
+
 // ─── Tier preference order per profile ───────────────────────────────────────
 
 const TIER_ORDER: Record<Tier, Tier[]> = {
@@ -71,8 +83,12 @@ const TIER_ORDER: Record<Tier, Tier[]> = {
 
 /**
  * Compute a 0–1 normalized capability score for a model on a given SDD phase.
+ * V1 scoring (LEGACY - for comparison only): tag-based strengths + context + cost.
+ * 
+ * NOTE: This function is kept for V1 vs V2 comparison analysis.
+ * Production code uses V2 (LM Arena-based) by default.
  */
-export function scoreModel(model: ModelRecord, phase: SddPhase): number {
+export function scoreModelV1(model: ModelRecord, phase: SddPhase): number {
   const weights = PHASE_WEIGHTS[phase];
 
   // Strength score: sum weights of matching tags
@@ -110,16 +126,58 @@ export function scoreModel(model: ModelRecord, phase: SddPhase): number {
 }
 
 /**
+ * Compute score using V2 engine (arena-based).
+ * Requires pre-fetched arena scores in config.
+ */
+function scoreModelV2(
+  model: ModelRecord,
+  phase: SddPhase,
+  preferredTier: Tier,
+  arenaScoresCache: Map<string, Map<string, ScoringV2.ArenaScoreData>>
+): number {
+  const arenaScores = arenaScoresCache.get(model.id) ?? new Map();
+  const components = ScoringV2.scoreModel(model, phase, arenaScores, preferredTier);
+  return components.final;
+}
+
+/**
+ * Unified scoring function with version selection.
+ * Default: V1 (backward compatible).
+ */
+export function scoreModel(
+  model: ModelRecord,
+  phase: SddPhase,
+  config: ScoringConfig = DEFAULT_CONFIG,
+  preferredTier?: Tier
+): number {
+  if (config.version === "v2") {
+    if (!config.arenaScoresCache) {
+      throw new Error("V2 scoring requires arenaScoresCache in config");
+    }
+    if (!preferredTier) {
+      throw new Error("V2 scoring requires preferredTier parameter");
+    }
+    return scoreModelV2(model, phase, preferredTier, config.arenaScoresCache);
+  }
+
+  // V1 (default)
+  return scoreModelV1(model, phase);
+}
+
+/**
  * Sort models for a phase by tier preference first, then by score.
  */
 function rankModelsForPhase(
   models: ModelRecord[],
   phase: SddPhase,
-  preferredTierOrder: Tier[]
+  preferredTierOrder: Tier[],
+  config: ScoringConfig = DEFAULT_CONFIG
 ): ModelRecord[] {
+  const preferredTier = preferredTierOrder[0]; // First tier in order is the preferred one
+
   const scored = models.map((m) => ({
     model: m,
-    score: scoreModel(m, phase),
+    score: scoreModel(m, phase, config, preferredTier),
     tierIdx: preferredTierOrder.indexOf(m.tier),
   }));
 
@@ -136,14 +194,15 @@ function rankModelsForPhase(
 
 function buildProfile(
   models: ModelRecord[],
-  profileTier: Tier
+  profileTier: Tier,
+  config: ScoringConfig = DEFAULT_CONFIG
 ): TeamProfile {
   const tierOrder = TIER_ORDER[profileTier];
   const primaryUsageCount = new Map<string, number>();
   const phases: PhaseAssignment[] = [];
 
   for (const phase of SDD_PHASES) {
-    const ranked = rankModelsForPhase(models, phase, tierOrder);
+    const ranked = rankModelsForPhase(models, phase, tierOrder, config);
 
     // Pick primary: respect MAX_PRIMARY_USES_PER_MODEL
     let primary: ModelRecord | null = null;
@@ -168,7 +227,7 @@ function buildProfile(
       .filter((m) => m.id !== primary!.id)
       .slice(0, 3);
 
-    const score = scoreModel(primary, phase);
+    const score = scoreModel(primary, phase, config, profileTier);
 
     phases.push({
       phase,
@@ -250,23 +309,34 @@ function buildWarnings(model: ModelRecord, phase: SddPhase): string[] {
  * @param dbFallback   - Full DB dictionary as fallback pool
  * @param parsedModels - Raw parsed input (for summary)
  * @param unresolved   - Model IDs that couldn't be resolved
+ * @param config       - Scoring configuration (default: V1)
  */
-export function generateProfiles(
+export async function generateProfiles(
   inputModels: ModelRecord[],
   dbFallback: ModelRecord[],
   parsedModels: ParsedModel[],
-  unresolved: string[]
-): TeamRecommendation {
-  // Merge input models with DB fallback (input models take priority — dedup by id)
+  unresolved: string[],
+  options?: { version?: "v1" | "v2" }
+): Promise<TeamRecommendation> {
+  const resolvedVersion = options?.version || "v2"; // Default switched to V2
+
+  // Pool of all models (inputModels + db fallback with deduplication)
   const allById = new Map<string, ModelRecord>();
   for (const m of dbFallback) allById.set(m.id, m);
   for (const m of inputModels) allById.set(m.id, m); // override with user's models
-
   const pool = [...allById.values()];
 
-  const premium  = buildProfile(pool, "PREMIUM");
-  const balanced = buildProfile(pool, "BALANCED");
-  const economic = buildProfile(pool, "ECONOMIC");
+  // Config for scoring
+  let finalConfig: ScoringConfig = { version: resolvedVersion };
+  if (resolvedVersion === "v2") {
+    const modelIds = pool.map((m) => m.id);
+    const arenaScoresCache = await ScoringV2.fetchArenaScoresBatch(modelIds);
+    finalConfig = { ...finalConfig, arenaScoresCache };
+  }
+
+  const premium = buildProfile(pool, "PREMIUM", finalConfig);
+  const balanced = buildProfile(pool, "BALANCED", finalConfig);
+  const economic = buildProfile(pool, "ECONOMIC", finalConfig);
 
   return {
     premium,
@@ -276,4 +346,91 @@ export function generateProfiles(
     unresolvedModels: unresolved,
     generatedAt: new Date().toISOString(),
   };
+}
+
+// ─── Comparison Helpers ───────────────────────────────────────────────────────
+
+export interface ComparisonResult {
+  phase: SddPhase;
+  tier: Tier;
+  v1Primary: string;
+  v1Score: number;
+  v2Primary: string;
+  v2Score: number;
+  primaryChanged: boolean;
+  scoreDelta: number;
+}
+
+/**
+ * Compare V1 vs V2 scoring for a set of models across all phases and tiers.
+ * Returns detailed comparison showing which models were selected and score differences.
+ */
+export async function compareV1vsV2(
+  inputModels: ModelRecord[],
+  dbFallback: ModelRecord[]
+): Promise<ComparisonResult[]> {
+  const results: ComparisonResult[] = [];
+
+  // Generate profiles with both versions
+  const v1Profiles = await generateProfiles(inputModels, dbFallback, [], [], { version: "v1" });
+  const v2Profiles = await generateProfiles(inputModels, dbFallback, [], [], { version: "v2" });
+
+  const tiers: Tier[] = ["PREMIUM", "BALANCED", "ECONOMIC"];
+
+  for (const tier of tiers) {
+    const v1Profile = v1Profiles[tier.toLowerCase() as keyof TeamRecommendation] as TeamProfile;
+    const v2Profile = v2Profiles[tier.toLowerCase() as keyof TeamRecommendation] as TeamProfile;
+
+    for (let i = 0; i < v1Profile.phases.length; i++) {
+      const v1Phase = v1Profile.phases[i];
+      const v2Phase = v2Profile.phases[i];
+
+      results.push({
+        phase: v1Phase.phase,
+        tier,
+        v1Primary: v1Phase.primary.name,
+        v1Score: v1Phase.score,
+        v2Primary: v2Phase.primary.name,
+        v2Score: v2Phase.score,
+        primaryChanged: v1Phase.primary.id !== v2Phase.primary.id,
+        scoreDelta: v2Phase.score - v1Phase.score,
+      });
+    }
+  }
+
+  return results;
+}
+
+/**
+ * Generate a summary report comparing V1 vs V2 scoring.
+ * Returns markdown-formatted comparison table.
+ */
+export function formatComparisonReport(results: ComparisonResult[]): string {
+  const lines: string[] = [
+    "# V1 vs V2 Scoring Comparison",
+    "",
+    "| Tier | Phase | V1 Primary | V1 Score | V2 Primary | V2 Score | Changed | Delta |",
+    "|------|-------|------------|----------|------------|----------|---------|-------|",
+  ];
+
+  for (const r of results) {
+    const changed = r.primaryChanged ? "✓" : "";
+    const delta = r.scoreDelta >= 0 ? `+${r.scoreDelta.toFixed(3)}` : r.scoreDelta.toFixed(3);
+    
+    lines.push(
+      `| ${r.tier} | ${r.phase} | ${r.v1Primary} | ${r.v1Score.toFixed(3)} | ${r.v2Primary} | ${r.v2Score.toFixed(3)} | ${changed} | ${delta} |`
+    );
+  }
+
+  // Summary stats
+  const totalChanges = results.filter((r) => r.primaryChanged).length;
+  const avgDelta = results.reduce((sum, r) => sum + r.scoreDelta, 0) / results.length;
+
+  lines.push("");
+  lines.push("## Summary");
+  lines.push(`- Total comparisons: ${results.length}`);
+  lines.push(`- Primary model changes: ${totalChanges} (${((totalChanges / results.length) * 100).toFixed(1)}%)`);
+  lines.push(`- Average score delta: ${avgDelta >= 0 ? "+" : ""}${avgDelta.toFixed(3)}`);
+
+  return lines.join("\n");
 }

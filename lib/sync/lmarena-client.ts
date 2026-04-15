@@ -19,8 +19,10 @@ const HF_DATASET_CONFIG = "text_style_control";
 const HF_DATASET_SPLIT = "latest";
 const REQUEST_TIMEOUT_MS = 30_000;
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
-const MAX_RETRIES = 3;
-const RETRY_DELAYS_MS = [1000, 2000, 4000]; // exponential backoff
+const MAX_RETRIES = 5;
+const RETRY_DELAYS_MS = [1000, 2000, 4000]; // exponential backoff for 5xx
+const RETRY_DELAYS_429_MS = [2000, 5000, 10000, 20000, 40000]; // aggressive backoff for rate limits
+const PAGE_DELAY_MS = 500; // pause between successful pages to reduce throttling
 const PAGE_SIZE = 100; // HF datasets-server page size
 
 /**
@@ -176,7 +178,8 @@ async function fetchWithTimeout(
 
 /**
  * Fetch with exponential backoff retry.
- * Retries on network errors and 5xx server errors.
+ * Retries on network errors, 5xx server errors, and 429 rate limits.
+ * Respects Retry-After header for 429 responses.
  */
 async function fetchWithRetry(
   url: string,
@@ -188,6 +191,43 @@ async function fetchWithRetry(
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
       const response = await fetchWithTimeout(url, timeoutMs);
+
+      // Retry on 429 rate limit with aggressive backoff
+      if (response.status === 429 && attempt < maxRetries) {
+        lastError = new Error(
+          `Rate limit exceeded (429 Too Many Requests)`
+        );
+
+        // Check for Retry-After header (can be seconds or HTTP date)
+        const retryAfter = response.headers.get("Retry-After");
+        let delay: number;
+
+        if (retryAfter) {
+          // Try parsing as seconds first
+          const retrySeconds = parseInt(retryAfter, 10);
+          if (!isNaN(retrySeconds)) {
+            delay = retrySeconds * 1000;
+          } else {
+            // Try parsing as HTTP date
+            const retryDate = new Date(retryAfter);
+            if (!isNaN(retryDate.getTime())) {
+              delay = Math.max(0, retryDate.getTime() - Date.now());
+            } else {
+              // Fallback to exponential backoff
+              delay = RETRY_DELAYS_429_MS[attempt] ?? RETRY_DELAYS_429_MS[RETRY_DELAYS_429_MS.length - 1];
+            }
+          }
+        } else {
+          // No Retry-After header, use aggressive exponential backoff
+          delay = RETRY_DELAYS_429_MS[attempt] ?? RETRY_DELAYS_429_MS[RETRY_DELAYS_429_MS.length - 1];
+        }
+
+        console.warn(
+          `[lmarena-client] Attempt ${attempt + 1}/${maxRetries + 1} failed: ${lastError.message}. Retrying in ${delay}ms...`
+        );
+        await sleep(delay);
+        continue;
+      }
 
       // Retry on 5xx server errors
       if (response.status >= 500 && attempt < maxRetries) {
@@ -202,7 +242,7 @@ async function fetchWithRetry(
         continue;
       }
 
-      // Return response for caller to handle (including 4xx errors)
+      // Return response for caller to handle (including other 4xx errors)
       return response;
     } catch (err) {
       lastError = err instanceof Error ? err : new Error(String(err));
@@ -267,18 +307,29 @@ async function fetchAllDatasetRows(): Promise<HFDatasetRow[]> {
       }
 
       allRows.push(...hfData.rows);
-      console.log(`[lmarena-client] Fetched ${hfData.rows.length} rows (offset ${offset})`);
+      
+      // Enhanced progress logging
+      const totalEstimate = hfData.num_rows_total ?? "unknown";
+      console.log(
+        `[lmarena-client] Fetched ${hfData.rows.length} rows at offset ${offset} (total so far: ${allRows.length}/${totalEstimate})`
+      );
 
       // Check if there are more rows to fetch
       if (hfData.rows.length < PAGE_SIZE) {
         hasMore = false;
       } else {
         offset += PAGE_SIZE;
+        
+        // Pause between pages to reduce throttling risk
+        if (hasMore) {
+          console.log(`[lmarena-client] Pausing ${PAGE_DELAY_MS}ms before next page...`);
+          await sleep(PAGE_DELAY_MS);
+        }
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       console.error(`[lmarena-client] Failed to fetch rows at offset ${offset}: ${message}`);
-      throw new Error(`Failed to fetch dataset rows: ${message}`);
+      throw new Error(`Failed to fetch dataset rows at offset ${offset}: ${message}`);
     }
   }
 

@@ -159,10 +159,48 @@ const CATEGORY_METADATA: Record<
 /**
  * Explicit alias mapping for known LM Arena model names to our Model IDs.
  * Used when arena names don't match our ID conventions.
+ * 
+ * LM Arena typically uses model names without provider prefixes and without
+ * version suffixes like -latest or -preview.
  */
 const KNOWN_ALIASES: Record<string, string> = {
-  // Add explicit mappings here as needed
-  // Example: "gpt-4-turbo": "openai/gpt-4-turbo",
+  // Anthropic models (without provider prefix)
+  "claude-opus-4-5": "anthropic/claude-opus-4-5",
+  "claude-sonnet-4-5": "anthropic/claude-sonnet-4-5",
+  "claude-3-7-sonnet": "anthropic/claude-3-7-sonnet-latest",
+  "claude-haiku-3-5": "anthropic/claude-haiku-3-5",
+  "claude-sonnet-3-5": "anthropic/claude-sonnet-3-5",
+  
+  // OpenAI models (without provider prefix)
+  "gpt-4o": "openai/gpt-4o",
+  "o3": "openai/o3",
+  "o4-mini": "openai/o4-mini",
+  "gpt-4.5-preview": "openai/gpt-4.5-preview",
+  "gpt-4o-mini": "openai/gpt-4o-mini",
+  "o3-mini": "openai/o3-mini",
+  
+  // Google models (without provider prefix and -preview suffix)
+  "gemini-2.5-pro": "google/gemini-2.5-pro-preview",
+  "gemini-2.0-flash": "google/gemini-2.0-flash",
+  "gemini-2.5-flash": "google/gemini-2.5-flash-preview",
+  
+  // Groq models (without provider prefix)
+  "llama-3.3-70b-versatile": "groq/llama-3.3-70b-versatile",
+  "llama-3.1-8b-instant": "groq/llama-3.1-8b-instant",
+  "deepseek-r1-distill-llama-70b": "groq/deepseek-r1-distill-llama-70b",
+  
+  // Mistral models (without provider prefix and -latest suffix)
+  "mistral-large": "mistral/mistral-large-latest",
+  "codestral": "mistral/codestral-latest",
+  "mistral-small": "mistral/mistral-small-latest",
+  
+  // DeepSeek models (without provider prefix)
+  "deepseek-chat": "deepseek/deepseek-chat",
+  "deepseek-r1": "deepseek/deepseek-r1",
+  
+  // xAI models (without provider prefix)
+  "grok-3-beta": "xai/grok-3-beta",
+  "grok-3-mini-beta": "xai/grok-3-mini-beta",
 };
 
 /**
