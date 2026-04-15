@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter, JetBrains_Mono, Space_Grotesk } from "next/font/google";
 import "./globals.css";
 import Shell from "@/components/layout/Shell";
+import { MigrationWrapper } from "@/components/layout/MigrationWrapper";
 import { LanguageProvider } from "@/lib/i18n/LanguageProvider";
 import { APP_NAME } from "@/lib/constants/version";
 
@@ -41,9 +42,11 @@ export default function RootLayout({
       className={`${inter.variable} ${jetbrainsMono.variable} ${spaceGrotesk.variable}`}
     >
       <body>
-        <LanguageProvider>
-          <Shell>{children}</Shell>
-        </LanguageProvider>
+        <MigrationWrapper>
+          <LanguageProvider>
+            <Shell>{children}</Shell>
+          </LanguageProvider>
+        </MigrationWrapper>
       </body>
     </html>
   );

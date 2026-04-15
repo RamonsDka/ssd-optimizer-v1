@@ -3,6 +3,7 @@
 // ─── Settings Page ────────────────────────────────────────────────────────────
 // Displays system configuration: DB stats, feature flags, environment info.
 // Also includes Admin Panel (maintenance actions) and Deployment Recommendations.
+// V2 Update: Now uses session-scoped keys for localStorage operations.
 
 import { useState, useEffect, useCallback } from "react";
 import {
@@ -29,6 +30,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
 import { APP_VERSION, APP_NAME } from "@/lib/constants/version";
+import { getOrCreateSessionId } from "@/lib/session/session-manager";
 import type {
   SettingsResponse,
   SettingsErrorResponse,
@@ -411,20 +413,25 @@ export default function SettingsPage() {
       "clear-local-persistence": { status: "loading", message: "" },
     }));
     try {
-      // Clear all localStorage keys related to this app
+      // Clear all localStorage keys for THIS session only
+      const sessionId = getOrCreateSessionId();
       const keysToRemove: string[] = [];
+      
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
-        if (key && (key.startsWith("sdd-") || key.startsWith("sdd_"))) {
+        // Remove keys that belong to this session OR old global keys
+        if (key && (key.startsWith(`${sessionId}:`) || key.startsWith("sdd-") || key.startsWith("sdd_"))) {
           keysToRemove.push(key);
         }
       }
+      
       keysToRemove.forEach((k) => localStorage.removeItem(k));
+      
       setSysActionStates((prev) => ({
         ...prev,
         "clear-local-persistence": {
           status: "success",
-          message: `${keysToRemove.length} clave(s) eliminada(s) de localStorage.`,
+          message: `${keysToRemove.length} clave(s) eliminada(s) de localStorage para esta sesión.`,
         },
       }));
     } catch (err) {

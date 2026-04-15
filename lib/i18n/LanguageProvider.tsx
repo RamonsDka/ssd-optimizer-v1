@@ -3,6 +3,7 @@
 // ─── LanguageProvider ──────────────────────────────────────────────────────────
 // React Context that stores the selected language ('es' | 'en').
 // Persists to localStorage under key "sdd-lang" for client-side hydration.
+// V2 Update: Now uses session-scoped keys to isolate data per browser.
 // Provides `t(section, key)` translation function and `setLanguage()` setter.
 
 import {
@@ -14,6 +15,7 @@ import {
   type ReactNode,
 } from "react";
 import { type Language, t } from "./translations";
+import { getSessionKey } from "@/lib/session/session-manager";
 
 // ─── Context shape ─────────────────────────────────────────────────────────
 
@@ -42,7 +44,8 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
   // Hydrate from localStorage on mount (client-only)
   useEffect(() => {
     try {
-      const stored = localStorage.getItem(STORAGE_KEY);
+      const sessionKey = getSessionKey(STORAGE_KEY);
+      const stored = localStorage.getItem(sessionKey);
       if (stored === "en" || stored === "es") {
         setLang(stored);
       }
@@ -54,7 +57,8 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
   const setLanguage = useCallback((newLang: Language) => {
     setLang(newLang);
     try {
-      localStorage.setItem(STORAGE_KEY, newLang);
+      const sessionKey = getSessionKey(STORAGE_KEY);
+      localStorage.setItem(sessionKey, newLang);
     } catch {
       // localStorage unavailable, state still updates in-memory
     }
@@ -64,7 +68,8 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
     setLang((prev) => {
       const next: Language = prev === "es" ? "en" : "es";
       try {
-        localStorage.setItem(STORAGE_KEY, next);
+        const sessionKey = getSessionKey(STORAGE_KEY);
+        localStorage.setItem(sessionKey, next);
       } catch {
         // ignore
       }

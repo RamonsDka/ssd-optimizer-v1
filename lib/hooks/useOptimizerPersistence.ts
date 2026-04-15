@@ -3,6 +3,8 @@
 // ─── useOptimizerPersistence ────────────────────────────────────────────────
 // Custom hook that persists TeamRecommendation in localStorage.
 //
+// V2 Update: Now uses session-scoped keys to isolate data per browser.
+//
 // Contract:
 // - On mount (client only): loads last saved result from localStorage.
 // - On save(result): persists the result and updates local state.
@@ -14,6 +16,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import type { TeamRecommendation } from "@/types";
+import { getSessionKey } from "@/lib/session/session-manager";
 
 const STORAGE_KEY = "sdd-optimizer-last-result" as const;
 
@@ -35,14 +38,16 @@ export function useOptimizerPersistence(): UseOptimizerPersistenceReturn {
   // On mount — read from localStorage (client-only, safe from SSR mismatch)
   useEffect(() => {
     try {
-      const raw = localStorage.getItem(STORAGE_KEY);
+      const sessionKey = getSessionKey(STORAGE_KEY);
+      const raw = localStorage.getItem(sessionKey);
       if (raw) {
         const parsed = JSON.parse(raw) as TeamRecommendation;
         setRecommendation(parsed);
       }
     } catch {
       // Corrupted data — silently discard
-      localStorage.removeItem(STORAGE_KEY);
+      const sessionKey = getSessionKey(STORAGE_KEY);
+      localStorage.removeItem(sessionKey);
     } finally {
       setIsHydrating(false);
     }
@@ -50,7 +55,8 @@ export function useOptimizerPersistence(): UseOptimizerPersistenceReturn {
 
   const save = useCallback((result: TeamRecommendation) => {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(result));
+      const sessionKey = getSessionKey(STORAGE_KEY);
+      localStorage.setItem(sessionKey, JSON.stringify(result));
     } catch {
       // localStorage full or unavailable — degrade gracefully (state still updated)
     }
@@ -59,7 +65,8 @@ export function useOptimizerPersistence(): UseOptimizerPersistenceReturn {
 
   const clear = useCallback(() => {
     try {
-      localStorage.removeItem(STORAGE_KEY);
+      const sessionKey = getSessionKey(STORAGE_KEY);
+      localStorage.removeItem(sessionKey);
     } catch {
       // No-op
     }
