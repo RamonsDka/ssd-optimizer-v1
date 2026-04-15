@@ -50,6 +50,21 @@ model OptimizationJob {
 
   selections ModelSelection[]
 
+  @@map("models")
+}
+
+// ─── Optimization Jobs ────────────────────────────────────────────────────────
+
+model OptimizationJob {
+  id         String    @id @default(cuid())
+  userInput  String    @db.Text
+  results    Json      // TeamRecommendation JSON
+  status     JobStatus @default(PENDING)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  selections ModelSelection[]
+
   @@map("optimization_jobs")
 }
 
@@ -58,7 +73,7 @@ model ModelSelection {
   jobId     String
   job       OptimizationJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
   modelId   String
-  model     Model           @relation(fields: [modelId], references: [id])
+  model     Model           @relation(fields: [modelId], references: [id], onDelete: Cascade)
   phase     Int             // SDD phase number 1-10
   tier      Tier
   reasoning String          @db.Text
