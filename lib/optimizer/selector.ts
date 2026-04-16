@@ -198,7 +198,8 @@ function rankModelsForPhase(
 function buildProfile(
   models: ModelRecord[],
   profileTier: Tier,
-  config: ScoringConfig = DEFAULT_CONFIG
+  config: ScoringConfig = DEFAULT_CONFIG,
+  strict = false
 ): TeamProfile {
   const tierOrder = TIER_ORDER[profileTier];
   const primaryUsageCount = new Map<string, number>();
@@ -223,12 +224,14 @@ function buildProfile(
       }
     }
 
-    // Fallback: if all candidates are exhausted, pick best ignoring cap
-    if (!primary) {
+    // Fallback when all candidates hit the usage cap:
+    // - strict=false → pick best regardless of cap (permissive behaviour)
+    // - strict=true  → do NOT reach outside the capped pool; skip this phase
+    if (!primary && !strict) {
       primary = ranked[0] ?? null;
     }
 
-    if (!primary) continue; // no models at all — skip phase
+    if (!primary) continue; // no eligible model — skip phase
 
     // Fallbacks: next 3 models from ranked list (excluding primary)
     const fallbacks = ranked
@@ -327,25 +330,39 @@ function buildWarnings(model: ModelRecord, phase: SddPhase | string): string[] {
  * Generate all 3 profiles from a set of resolved models.
  *
  * @param inputModels  - Models parsed from user input (resolved from DB)
- * @param dbFallback   - Full DB dictionary as fallback pool
+ * @param dbFallback   - Full DB dictionary as fallback pool (ignored when strict=true)
  * @param parsedModels - Raw parsed input (for summary)
  * @param unresolved   - Model IDs that couldn't be resolved
- * @param config       - Scoring configuration (default: V1)
+ * @param options      - Scoring configuration options
+ * @param options.strict - When true, only user-provided inputModels are used as the pool;
+ *                         dbFallback is ignored entirely. Defaults to false.
  */
 export async function generateProfiles(
   inputModels: ModelRecord[],
   dbFallback: ModelRecord[],
   parsedModels: ParsedModel[],
   unresolved: string[],
-  options?: { version?: "v1" | "v2"; customPhases?: CustomSddPhase[] }
+  options?: { version?: "v1" | "v2"; customPhases?: CustomSddPhase[]; strict?: boolean }
 ): Promise<TeamRecommendation> {
   const resolvedVersion = options?.version || "v2"; // Default switched to V2
+  const strict = options?.strict ?? false;
 
-  // Pool of all models (inputModels + db fallback with deduplication)
-  const allById = new Map<string, ModelRecord>();
-  for (const m of dbFallback) allById.set(m.id, m);
-  for (const m of inputModels) allById.set(m.id, m); // override with user's models
-  const pool = [...allById.values()];
+  // Pool resolution:
+  // - strict=true  → use ONLY inputModels (no DB fallback contamination)
+  // - strict=false → merge dbFallback + inputModels (inputModels override duplicates)
+  let pool: ModelRecord[];
+  if (strict || dbFallback.length === 0) {
+    // Strict mode: respect exactly what the user provided
+    const byId = new Map<string, ModelRecord>();
+    for (const m of inputModels) byId.set(m.id, m);
+    pool = [...byId.values()];
+  } else {
+    // Permissive mode: merge DB fallback with user models (user overrides)
+    const allById = new Map<string, ModelRecord>();
+    for (const m of dbFallback) allById.set(m.id, m);
+    for (const m of inputModels) allById.set(m.id, m); // override with user's models
+    pool = [...allById.values()];
+  }
 
   // Config for scoring
   let finalConfig: ScoringConfig = { version: resolvedVersion };
@@ -358,9 +375,9 @@ export async function generateProfiles(
     finalConfig = { ...finalConfig, arenaScoresCache };
   }
 
-  const premium = buildProfile(pool, "PREMIUM", finalConfig);
-  const balanced = buildProfile(pool, "BALANCED", finalConfig);
-  const economic = buildProfile(pool, "ECONOMIC", finalConfig);
+  const premium = buildProfile(pool, "PREMIUM", finalConfig, strict);
+  const balanced = buildProfile(pool, "BALANCED", finalConfig, strict);
+  const economic = buildProfile(pool, "ECONOMIC", finalConfig, strict);
 
   return {
     premium,

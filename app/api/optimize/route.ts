@@ -6,8 +6,10 @@ import { parseModelList } from "@/lib/optimizer/parser";
 import { generateProfiles } from "@/lib/optimizer/selector";
 import { getGeminiClient } from "@/lib/ai/gemini";
 import { prisma } from "@/lib/db/prisma";
-import type { ModelRecord, OptimizeResponse, OptimizeErrorResponse, OptimizeRequest, CustomSddPhase } from "@/types";
+import { Prisma } from "@prisma/client";
+import type { ModelRecord, OptimizeResponse, OptimizeErrorResponse, OptimizeRequest, CustomSddPhase, TeamProfile } from "@/types";
 import type { Tier } from "@/types";
+import { SDD_PHASES } from "@/types";
 
 // ─── Runtime: Node.js (Prisma requires it) ────────────────────────────────────
 export const runtime = "nodejs";
@@ -147,9 +149,14 @@ export async function POST(
       ...aiResults.values(),
     ];
 
-    // 6. Load full DB dictionary as fallback pool for phases with no user model
-    const allDbModels = await prisma.model.findMany();
-    const dbFallback: ModelRecord[] = allDbModels.map(prismaToModelRecord);
+    // 6. Load full DB dictionary as fallback pool.
+    // Only used when the user provided NO resolvable models (strict=false fallback).
+    // When the user provided models (inputModels.length > 0), we operate in strict mode:
+    // the selector will use ONLY those models and ignore the DB fallback entirely.
+    const strict = inputModels.length > 0;
+    const dbFallback: ModelRecord[] = strict
+      ? [] // strict mode: skip the expensive DB full-scan
+      : await prisma.model.findMany().then((rows) => rows.map(prismaToModelRecord));
 
     // 7. Generate profiles
     const recommendation = await generateProfiles(
@@ -157,20 +164,35 @@ export async function POST(
       dbFallback,
       parsed,
       unresolved,
-      { version: "v2", customPhases: customPhasesList }
+      { version: "v2", customPhases: customPhasesList, strict }
     );
 
-    // 8. Persist optimization job
-    const job = await prisma.optimizationJob.create({
-      data: {
-        userInput: modelList,
-        results: recommendation as object,
-        advancedOptions: advancedOptions && typeof advancedOptions === "object"
-          ? advancedOptions as object
-          : undefined,
-        status: "COMPLETED",
-      },
+    // 8. Persist optimization job + model selections (atomic transaction)
+    const { job, selectionsCount } = await prisma.$transaction(async (tx) => {
+      // 8a. Create the optimization job
+      const createdJob = await tx.optimizationJob.create({
+        data: {
+          userInput: modelList,
+          results: recommendation as unknown as Prisma.InputJsonValue,
+          advancedOptions: advancedOptions && typeof advancedOptions === "object"
+            ? (advancedOptions as unknown as Prisma.InputJsonValue)
+            : Prisma.JsonNull,
+          status: "COMPLETED",
+        },
+      });
+
+      // 8b. Build ModelSelection records from all three profiles
+      const selectionData = buildModelSelections(createdJob.id, recommendation.premium, recommendation.balanced, recommendation.economic);
+
+      // 8c. Persist selections (only those with a valid phase number)
+      if (selectionData.length > 0) {
+        await tx.modelSelection.createMany({ data: selectionData });
+      }
+
+      return { job: createdJob, selectionsCount: selectionData.length };
     });
+
+    console.log(`[POST /api/optimize] Job ${job.id} created with ${selectionsCount} model selections`);
 
     return NextResponse.json({ success: true, jobId: job.id, data: recommendation });
   } catch (err) {
@@ -205,4 +227,55 @@ function prismaToModelRecord(m: {
     strengths: m.strengths,
     discoveredByAI: m.discoveredByAI,
   };
+}
+
+// ─── Helper: Phase string → phase number (1-based index) ──────────────────────
+// SDD_PHASES is ordered; custom phases get no numeric mapping and are skipped.
+
+function phaseStringToNumber(phase: string): number | null {
+  const idx = SDD_PHASES.indexOf(phase as (typeof SDD_PHASES)[number]);
+  if (idx === -1) return null; // custom phase — no stable number, skip
+  return idx + 1; // 1-based (1–10)
+}
+
+// ─── Helper: Build ModelSelection create-many payload from all three profiles ──
+
+interface ModelSelectionCreateData {
+  jobId: string;
+  modelId: string;
+  phase: number;
+  tier: Tier;
+  reasoning: string;
+  score: number;
+}
+
+function buildModelSelections(
+  jobId: string,
+  premium: TeamProfile,
+  balanced: TeamProfile,
+  economic: TeamProfile,
+): ModelSelectionCreateData[] {
+  const profiles: TeamProfile[] = [premium, balanced, economic];
+  const records: ModelSelectionCreateData[] = [];
+
+  for (const profile of profiles) {
+    for (const assignment of profile.phases) {
+      const phaseNumber = phaseStringToNumber(assignment.phase);
+      if (phaseNumber === null) {
+        // Custom phase — no stable integer mapping, skip silently
+        continue;
+      }
+
+      records.push({
+        jobId,
+        modelId: assignment.primary.id,
+        phase: phaseNumber,
+        tier: profile.tier,
+        reasoning: assignment.reason,
+        score: assignment.score,
+      });
+    }
+  }
+
+  return records;
 }
