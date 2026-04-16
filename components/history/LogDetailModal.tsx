@@ -10,16 +10,18 @@
 // Data fetched on-demand from GET /api/history/[id].
 
 import { useState, useEffect } from "react";
-import { CheckCircle, XCircle, AlertCircle, Loader2, Clock, Cpu } from "lucide-react";
+import { CheckCircle, XCircle, AlertCircle, Loader2, Clock, Cpu, RotateCcw } from "lucide-react";
 import Modal, { ModalSkeleton, ModalSection } from "@/components/ui/Modal";
 import { cn } from "@/lib/utils/cn";
 import type { JobDetailResponse } from "@/app/api/history/[id]/route";
+import type { AdvancedOptions, RecreateQueryPayload } from "@/types";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface LogDetailModalProps {
   jobId: string | null;
   onClose: () => void;
+  onRecreate: (payload: RecreateQueryPayload) => void;
 }
 
 type JobDetail = JobDetailResponse["data"];
@@ -86,7 +88,7 @@ const TIER_COLOR: Record<string, string> = {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export default function LogDetailModal({ jobId, onClose }: LogDetailModalProps) {
+export default function LogDetailModal({ jobId, onClose, onRecreate }: LogDetailModalProps) {
   const [job, setJob] = useState<JobDetail | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -123,6 +125,24 @@ export default function LogDetailModal({ jobId, onClose }: LogDetailModalProps) 
     return () => { cancelled = true; };
   }, [jobId]);
 
+  const handleRecreate = () => {
+    if (!job) return;
+
+    // Use the advancedOptions snapshot persisted with the job in the DB,
+    // so the historical options are restored exactly — not the current localStorage state.
+    const advancedOptions = job.advancedOptions
+      ? (job.advancedOptions as AdvancedOptions)
+      : undefined;
+
+    onRecreate({
+      input: job.input,
+      advancedOptions,
+      sourceJobId: job.id,
+    });
+
+    onClose();
+  };
+
   return (
     <Modal
       open={!!jobId}
@@ -146,6 +166,20 @@ export default function LogDetailModal({ jobId, onClose }: LogDetailModalProps) 
       {/* Content */}
       {!loading && !error && job && (
         <div className="p-6 space-y-8">
+
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={handleRecreate}
+              className={cn(
+                "inline-flex items-center gap-2 px-4 py-2 font-mono text-xs uppercase tracking-widest",
+                "border border-primary/30 text-primary hover:bg-primary/10 transition-colors"
+              )}
+            >
+              <RotateCcw size={12} />
+              Recreate Query
+            </button>
+          </div>
 
           {/* ── Meta row ─────────────────────────────────────────────────── */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">

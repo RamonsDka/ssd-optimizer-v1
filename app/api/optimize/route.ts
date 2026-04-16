@@ -6,12 +6,14 @@ import { parseModelList } from "@/lib/optimizer/parser";
 import { generateProfiles } from "@/lib/optimizer/selector";
 import { getGeminiClient } from "@/lib/ai/gemini";
 import { prisma } from "@/lib/db/prisma";
-import type { ModelRecord, OptimizeResponse, OptimizeErrorResponse } from "@/types";
+import type { ModelRecord, OptimizeResponse, OptimizeErrorResponse, OptimizeRequest, CustomSddPhase } from "@/types";
 import type { Tier } from "@/types";
 
 // ─── Runtime: Node.js (Prisma requires it) ────────────────────────────────────
 export const runtime = "nodejs";
-export const maxDuration = 60; // 60s — allow Gemini AI calls
+export const maxDuration = 300; // allow slow upstreams, but we still cap AI work below
+
+const MAX_AI_CATEGORIZATIONS_PER_REQUEST = 8;
 
 // ─── POST handler ─────────────────────────────────────────────────────────────
 
@@ -28,13 +30,27 @@ export async function POST(
       );
     }
 
-    const { modelList } = body as Record<string, unknown>;
+    const { modelList, customPhases, advancedOptions } = body as OptimizeRequest & {
+      customPhases?: unknown;
+      advancedOptions?: unknown;
+    };
     if (typeof modelList !== "string" || !modelList.trim()) {
       return NextResponse.json(
         { success: false, error: "`modelList` must be a non-empty string" },
         { status: 400 }
       );
     }
+
+    const customPhasesList = Array.isArray(customPhases)
+      ? (customPhases.filter((phase): phase is CustomSddPhase => {
+          const candidate = phase as any;
+          return !!phase
+            && typeof candidate === "object"
+            && typeof candidate.name === "string"
+            && typeof candidate.displayName === "string"
+            && typeof candidate.categoryWeights === "object";
+        }))
+      : undefined;
 
     if (modelList.length > 50_000) {
       return NextResponse.json(
@@ -69,9 +85,18 @@ export async function POST(
 
     if (unknownIds.length > 0) {
       const gemini = getGeminiClient();
+      const idsForAi = unknownIds.slice(0, MAX_AI_CATEGORIZATIONS_PER_REQUEST);
+      const skippedUnknownIds = unknownIds.slice(MAX_AI_CATEGORIZATIONS_PER_REQUEST);
 
       if (gemini) {
-        const categorizations = await gemini.categorizeModels(unknownIds);
+        if (skippedUnknownIds.length > 0) {
+          console.warn(
+            `[POST /api/optimize] Skipping AI categorization for ${skippedUnknownIds.length} models to avoid request timeout`
+          );
+          unresolved.push(...skippedUnknownIds);
+        }
+
+        const categorizations = await gemini.categorizeModels(idsForAi);
 
         for (const [id, cat] of categorizations.entries()) {
           if (!cat || cat.confidence < 0.2) {
@@ -131,7 +156,8 @@ export async function POST(
       inputModels,
       dbFallback,
       parsed,
-      unresolved
+      unresolved,
+      { version: "v2", customPhases: customPhasesList }
     );
 
     // 8. Persist optimization job
@@ -139,13 +165,16 @@ export async function POST(
       data: {
         userInput: modelList,
         results: recommendation as object,
+        advancedOptions: advancedOptions && typeof advancedOptions === "object"
+          ? advancedOptions as object
+          : undefined,
         status: "COMPLETED",
       },
     });
 
     return NextResponse.json({ success: true, jobId: job.id, data: recommendation });
   } catch (err) {
-    console.error("[POST /api/optimize] Error:", err);
+    console.error("[POST /api/optimize] Error DETALLADO:", err);
     const message = err instanceof Error ? err.message : "Internal server error";
     return NextResponse.json(
       { success: false, error: message },

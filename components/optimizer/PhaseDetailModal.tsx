@@ -15,7 +15,7 @@ import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import type { TranslationSection } from "@/lib/i18n/translations";
 import type { PhaseDetailResponse, PhaseModelEntry } from "@/app/api/phases/[phase]/route";
 import type { Tier, PhaseAssignment, SddPhase } from "@/types";
-import { SDD_PHASE_LABELS } from "@/types";
+import { SDD_PHASE_LABELS, getPhaseLabel } from "@/types";
 
 type TFn = (section: TranslationSection, key: string) => string;
 
@@ -23,7 +23,7 @@ type TFn = (section: TranslationSection, key: string) => string;
 
 interface PhaseDetailModalProps {
   /** The SDD phase slug (e.g. "sdd-apply") or null to close */
-  phase: SddPhase | null;
+  phase: SddPhase | string | null;
   /** The primary model from the PhaseCard that was clicked */
   primaryModel?: PhaseAssignment["primary"] | null;
   onClose: () => void;
@@ -66,11 +66,12 @@ export default function PhaseDetailModal({
   const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
 
-  const phaseLabel = phase ? (SDD_PHASE_LABELS[phase][lang] ?? phase) : "";
+  const isBuiltInPhase = !!phase && phase in SDD_PHASE_LABELS;
+  const phaseLabel = phase ? getPhaseLabel(phase, lang) : "";
 
   const fetchData = useCallback(
     (p: number) => {
-      if (!phase) return;
+      if (!phase || !isBuiltInPhase) return;
       let cancelled = false;
       setLoading(true);
       setError(null);
@@ -94,19 +95,20 @@ export default function PhaseDetailModal({
 
       return () => { cancelled = true; };
     },
-    [phase]
+    [phase, isBuiltInPhase]
   );
 
   useEffect(() => {
-    if (!phase) {
+    if (!phase || !isBuiltInPhase) {
       setData(null);
       setError(null);
       setPage(1);
+      setLoading(false);
       return;
     }
     setPage(1);
     fetchData(1);
-  }, [phase, fetchData]);
+  }, [phase, fetchData, isBuiltInPhase]);
 
   const handlePageChange = (newPage: number) => {
     setPage(newPage);
@@ -133,23 +135,28 @@ export default function PhaseDetailModal({
         )}
 
         {/* ── Phase roster by tier ─────────────────────────────────────── */}
-        <ModalSection label={`${t("optimizer", "globalRoster")} ${data ? `(${data.total} ${data.total === 1 ? t("optimizer", "models") : t("optimizer", "modelsPlural")})` : ""}`}>
-          {loading && <ModalSkeleton rows={4} />}
-
-          {!loading && error && (
+        <ModalSection label={`${t("optimizer", "globalRoster")} ${isBuiltInPhase && data ? `(${data.total} ${data.total === 1 ? t("optimizer", "models") : t("optimizer", "modelsPlural")})` : ""}`}>
+          {!isBuiltInPhase ? (
+            <div className="space-y-4">
+              <div className="bg-surface-container-highest p-4 border-l-2 border-secondary">
+                <p className="font-mono text-xs text-on-surface leading-relaxed">{phaseLabel}</p>
+                <p className="text-xs text-on-surface-variant mt-2">
+                  Custom phases are shown in the optimizer, but the full roster API is not wired yet.
+                </p>
+              </div>
+            </div>
+          ) : loading ? (
+            <ModalSkeleton rows={4} />
+          ) : error ? (
             <div className="border border-red-500/30 bg-red-500/10 p-4 font-mono text-sm text-red-400">
               <span className="font-bold">[ERROR]</span> {error}
             </div>
-          )}
-
-          {!loading && !error && data && (
+          ) : data ? (
             <div className="space-y-6">
               {TIER_ORDER.map((tier) => {
                 const models = data.data[tier];
                 if (models.length === 0) return null;
-                return (
-                  <TierGroup key={tier} tier={tier} models={models} t={t} />
-                );
+                return <TierGroup key={tier} tier={tier} models={models} t={t} />;
               })}
 
               {data.total === 0 && (
@@ -158,7 +165,7 @@ export default function PhaseDetailModal({
                 </div>
               )}
             </div>
-          )}
+          ) : null}
         </ModalSection>
 
         {/* ── Pagination ────────────────────────────────────────────────── */}

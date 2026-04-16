@@ -81,6 +81,7 @@ export class GeminiAIClient {
   private readonly client: GoogleGenAI;
   private readonly model = "gemini-2.0-flash";
   private readonly maxRetries = 3;
+  private readonly perModelTimeoutMs = 12_000;
 
   constructor() {
     const apiKey = process.env.GEMINI_API_KEY;
@@ -149,7 +150,11 @@ export class GeminiAIClient {
 
     for (const id of modelIds) {
       try {
-        const cat = await this.categorizeModel(id);
+        const cat = await withTimeout(
+          this.categorizeModel(id),
+          this.perModelTimeoutMs,
+          `Gemini categorization timed out for ${id}`
+        );
         results.set(id, cat);
       } catch {
         // Non-fatal: model remains unresolved
@@ -206,6 +211,22 @@ function isRetryableError(err: Error): boolean {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(message)), ms);
+
+    promise
+      .then((value) => {
+        clearTimeout(timer);
+        resolve(value);
+      })
+      .catch((error) => {
+        clearTimeout(timer);
+        reject(error);
+      });
+  });
 }
 
 // ─── Singleton + feature flag ──────────────────────────────────────────────

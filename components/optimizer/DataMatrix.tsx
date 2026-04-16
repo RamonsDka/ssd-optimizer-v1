@@ -8,6 +8,9 @@ import { RefreshCw, Download, Copy, Check } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { cn } from "@/lib/utils/cn";
 import PhaseCard, { PhaseCardSkeleton } from "./PhaseCard";
+import DataMatrixList from "./DataMatrixList";
+import DataMatrixTable from "./DataMatrixTable";
+import DataMatrixCompact from "./DataMatrixCompact";
 import ModelDetailModal from "./ModelDetailModal";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { useCopyFeedback } from "@/lib/hooks/useCopyFeedback";
@@ -280,29 +283,46 @@ export default function DataMatrix({
         onClose={() => setSelectedOrchestratorModel(null)}
       />
 
-      {/* 2×5 grid — gap-[1px] creates the "brutalist seam" look */}
-      <div
-        className={cn(
-          "grid gap-[1px] bg-outline-variant/20",
-          viewMode === "grid" && "grid-cols-1 md:grid-cols-2 lg:grid-cols-5",
-          viewMode === "list" && "grid-cols-1",
-          viewMode === "table" && "grid-cols-1",
-          viewMode === "compact" && "grid-cols-1 md:grid-cols-3 lg:grid-cols-6"
-        )}
-      >
-        {loading
-          ? Array.from({ length: 10 }).map((_, i) => (
-              <PhaseCardSkeleton key={i} />
-            ))
-          : localizedPhases.map((assignment) => (
-              <PhaseCard
-                key={assignment.phase}
-                assignment={assignment}
-                accentTier={tier}
-                onPhaseClick={onPhaseClick}
-              />
-            ))}
-      </div>
+      {/* Dynamic View rendering */}
+      {viewMode === "list" ? (
+        <DataMatrixList
+          phases={localizedPhases}
+          tier={tier}
+          onPhaseClick={onPhaseClick}
+        />
+      ) : viewMode === "table" ? (
+        <DataMatrixTable
+          phases={localizedPhases}
+          tier={tier}
+          onPhaseClick={onPhaseClick}
+        />
+      ) : viewMode === "compact" ? (
+        <DataMatrixCompact
+          phases={localizedPhases}
+          tier={tier}
+          onPhaseClick={onPhaseClick}
+        />
+      ) : (
+        <div
+          className={cn(
+            "grid gap-[1px] bg-outline-variant/20",
+            "grid-cols-1 md:grid-cols-2 lg:grid-cols-5"
+          )}
+        >
+          {loading
+            ? Array.from({ length: 10 }).map((_, i) => (
+                <PhaseCardSkeleton key={i} />
+              ))
+            : localizedPhases.map((assignment) => (
+                <PhaseCard
+                  key={assignment.phase}
+                  assignment={assignment}
+                  accentTier={tier}
+                  onPhaseClick={onPhaseClick}
+                />
+              ))}
+        </div>
+      )}
     </section>
   );
 }

@@ -26,6 +26,18 @@ const PHASE_INDEX: Record<string, string> = {
   "sdd-onboard":  "P-09",
 };
 
+/**
+ * Get phase index label. For custom phases, returns "C-XX" format.
+ */
+function getPhaseIndex(phase: string): string {
+  if (phase in PHASE_INDEX) {
+    return PHASE_INDEX[phase];
+  }
+  // Custom phase: generate index based on hash
+  const hash = phase.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+  return `C-${String(hash % 100).padStart(2, '0')}`;
+}
+
 interface PhaseCardProps {
   assignment: PhaseAssignment;
   /** Color variant driven by the active profile tier */
@@ -45,8 +57,8 @@ export default function PhaseCard({ assignment, accentTier, loading = false, onP
     return <PhaseCardSkeleton />;
   }
 
-  const { phase, phaseLabel, primary, fallbacks, score, warnings, reason } = assignment;
-  const phaseId = PHASE_INDEX[phase] ?? "P-??";
+  const { phase, phaseLabel, primary, fallbacks, score, warnings, reason, aiConfidence } = assignment;
+  const phaseId = getPhaseIndex(phase);
   const scorePct = Math.round(score * 100);
   const hasWarnings = warnings.length > 0;
 
@@ -138,6 +150,9 @@ export default function PhaseCard({ assignment, accentTier, loading = false, onP
         <div className="font-mono text-[9px] text-on-surface-variant/50 truncate mt-0.5">
           {primary.providerId}
         </div>
+        {primary.discoveredByAI && (
+          <AICategoryBadge confidence={aiConfidence} />
+        )}
       </div>
 
       {/* Specs chips */}
@@ -237,6 +252,31 @@ function SpecChip({
       {icon}
       {label}
     </span>
+  );
+}
+
+// ─── AICategoryBadge ──────────────────────────────────────────────────────────
+
+/**
+ * Inline badge shown when the primary model was categorized by Gemini AI.
+ * Displays a warning indicator and the AI-derived confidence percentage.
+ */
+function AICategoryBadge({ confidence }: { confidence?: number }) {
+  const confidencePct = confidence !== undefined
+    ? Math.round(confidence * 100)
+    : null;
+
+  return (
+    <div className="flex items-center gap-1 mt-1.5">
+      <span className="text-[8px] font-mono text-secondary/80 tracking-tight leading-none">
+        ⚠ Categorizado por IA
+      </span>
+      {confidencePct !== null && (
+        <span className="text-[8px] font-mono text-on-surface-variant/50 tracking-tight leading-none">
+          · Confianza: {confidencePct}%
+        </span>
+      )}
+    </div>
   );
 }
 

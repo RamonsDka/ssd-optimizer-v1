@@ -8,6 +8,7 @@ import type {
   PhaseAssignment,
   SddPhase,
   Tier,
+  CustomSddPhase,
 } from "@/types";
 import { SDD_PHASES, SDD_PHASE_LABELS } from "@/types";
 import type { ParsedModel } from "@/types";
@@ -67,6 +68,7 @@ const MAX_PRIMARY_USES_PER_MODEL = 2; // prevent a single model dominating all p
 export interface ScoringConfig {
   version: "v1" | "v2";
   arenaScoresCache?: Map<string, Map<string, ScoringV2.ArenaScoreData>>; // Pre-fetched arena scores for V2
+  customPhases?: CustomSddPhase[];
 }
 
 const DEFAULT_CONFIG: ScoringConfig = { version: "v2" };
@@ -88,8 +90,8 @@ const TIER_ORDER: Record<Tier, Tier[]> = {
  * NOTE: This function is kept for V1 vs V2 comparison analysis.
  * Production code uses V2 (LM Arena-based) by default.
  */
-export function scoreModelV1(model: ModelRecord, phase: SddPhase): number {
-  const weights = PHASE_WEIGHTS[phase];
+export function scoreModelV1(model: ModelRecord, phase: SddPhase | string): number {
+  const weights = PHASE_WEIGHTS[phase as SddPhase] ?? PHASE_WEIGHTS["sdd-apply"];
 
   // Strength score: sum weights of matching tags
   let strengthScore = 0;
@@ -131,12 +133,13 @@ export function scoreModelV1(model: ModelRecord, phase: SddPhase): number {
  */
 function scoreModelV2(
   model: ModelRecord,
-  phase: SddPhase,
+  phase: SddPhase | string,
   preferredTier: Tier,
-  arenaScoresCache: Map<string, Map<string, ScoringV2.ArenaScoreData>>
+  arenaScoresCache: Map<string, Map<string, ScoringV2.ArenaScoreData>>,
+  customPhases?: CustomSddPhase[]
 ): number {
   const arenaScores = arenaScoresCache.get(model.id) ?? new Map();
-  const components = ScoringV2.scoreModel(model, phase, arenaScores, preferredTier);
+  const components = ScoringV2.scoreModel(model, phase, arenaScores, preferredTier, 0.5, customPhases);
   return components.final;
 }
 
@@ -146,7 +149,7 @@ function scoreModelV2(
  */
 export function scoreModel(
   model: ModelRecord,
-  phase: SddPhase,
+  phase: SddPhase | string,
   config: ScoringConfig = DEFAULT_CONFIG,
   preferredTier?: Tier
 ): number {
@@ -157,7 +160,7 @@ export function scoreModel(
     if (!preferredTier) {
       throw new Error("V2 scoring requires preferredTier parameter");
     }
-    return scoreModelV2(model, phase, preferredTier, config.arenaScoresCache);
+    return scoreModelV2(model, phase, preferredTier, config.arenaScoresCache, config.customPhases);
   }
 
   // V1 (default)
@@ -169,7 +172,7 @@ export function scoreModel(
  */
 function rankModelsForPhase(
   models: ModelRecord[],
-  phase: SddPhase,
+  phase: SddPhase | string,
   preferredTierOrder: Tier[],
   config: ScoringConfig = DEFAULT_CONFIG
 ): ModelRecord[] {
@@ -200,8 +203,13 @@ function buildProfile(
   const tierOrder = TIER_ORDER[profileTier];
   const primaryUsageCount = new Map<string, number>();
   const phases: PhaseAssignment[] = [];
+  const customPhases = config.customPhases ?? [];
+  const phaseSequence = [
+    ...SDD_PHASES,
+    ...customPhases.map((phase) => phase.name),
+  ];
 
-  for (const phase of SDD_PHASES) {
+  for (const phase of phaseSequence) {
     const ranked = rankModelsForPhase(models, phase, tierOrder, config);
 
     // Pick primary: respect MAX_PRIMARY_USES_PER_MODEL
@@ -228,15 +236,24 @@ function buildProfile(
       .slice(0, 3);
 
     const score = scoreModel(primary, phase, config, profileTier);
+    const customPhase = customPhases.find((item) => item.name === phase);
+
+    // Compute AI confidence only for models categorized by Gemini AI
+    let aiConfidence: number | undefined;
+    if (primary.discoveredByAI && config.arenaScoresCache) {
+      const arenaScores = config.arenaScoresCache.get(primary.id) ?? new Map();
+      aiConfidence = ScoringV2.calculateConfidence(phase, arenaScores, primary, customPhases);
+    }
 
     phases.push({
       phase,
-      phaseLabel: SDD_PHASE_LABELS[phase].es, // Default to Spanish, will be overridden in frontend
+      phaseLabel: customPhase?.displayName ?? (phase in SDD_PHASE_LABELS ? SDD_PHASE_LABELS[phase as SddPhase].es : phase),
       primary,
       fallbacks,
       score,
-      reason: buildReason(primary, phase, score),
+      reason: buildReason(primary, phase, score, customPhase?.displayName),
       warnings: buildWarnings(primary, phase),
+      ...(aiConfidence !== undefined && { aiConfidence }),
     });
   }
 
@@ -260,7 +277,7 @@ function buildProfile(
 
 // ─── Reason + Warning builders ────────────────────────────────────────────────
 
-function buildReason(model: ModelRecord, phase: SddPhase, score: number): string {
+function buildReason(model: ModelRecord, phase: SddPhase | string, score: number, customLabel?: string): string {
   const pct = Math.round(score * 100);
   const topStrengths = model.strengths.slice(0, 2).join(", ") || "general";
 
@@ -277,10 +294,14 @@ function buildReason(model: ModelRecord, phase: SddPhase, score: number): string
     "sdd-onboard":  "onboarding de nuevos agentes en el ciclo SDD",
   };
 
-  return `${model.name} — puntuación ${pct}% para ${phaseActions[phase]}. Fortalezas: ${topStrengths}.`;
+  if (phase in phaseActions) {
+    return `${model.name} — puntuación ${pct}% para ${phaseActions[phase as SddPhase]}. Fortalezas: ${topStrengths}.`;
+  }
+
+  return `${model.name} — puntuación ${pct}% para ${customLabel ?? phase}. Fortalezas: ${topStrengths}.`;
 }
 
-function buildWarnings(model: ModelRecord, phase: SddPhase): string[] {
+function buildWarnings(model: ModelRecord, phase: SddPhase | string): string[] {
   const warnings: string[] = [];
 
   if (phase === "sdd-init" && model.contextWindow < CONTEXT_MIN_INIT) {
@@ -316,7 +337,7 @@ export async function generateProfiles(
   dbFallback: ModelRecord[],
   parsedModels: ParsedModel[],
   unresolved: string[],
-  options?: { version?: "v1" | "v2" }
+  options?: { version?: "v1" | "v2"; customPhases?: CustomSddPhase[] }
 ): Promise<TeamRecommendation> {
   const resolvedVersion = options?.version || "v2"; // Default switched to V2
 
@@ -328,6 +349,9 @@ export async function generateProfiles(
 
   // Config for scoring
   let finalConfig: ScoringConfig = { version: resolvedVersion };
+  if (options?.customPhases?.length) {
+    finalConfig.customPhases = options.customPhases;
+  }
   if (resolvedVersion === "v2") {
     const modelIds = pool.map((m) => m.id);
     const arenaScoresCache = await ScoringV2.fetchArenaScoresBatch(modelIds);
@@ -351,7 +375,7 @@ export async function generateProfiles(
 // ─── Comparison Helpers ───────────────────────────────────────────────────────
 
 export interface ComparisonResult {
-  phase: SddPhase;
+  phase: SddPhase | string;
   tier: Tier;
   v1Primary: string;
   v1Score: number;

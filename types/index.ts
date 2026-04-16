@@ -42,8 +42,14 @@ export const SDD_PHASE_LABELS: Record<SddPhase, { es: string; en: string }> = {
   "sdd-onboard": { es: "onboard", en: "onboard" },
 };
 
-export function getPhaseLabel(phase: SddPhase, lang: 'es' | 'en'): string {
-  return SDD_PHASE_LABELS[phase][lang];
+export function getPhaseLabel(phase: SddPhase | string, lang: 'es' | 'en'): string {
+  // Check if it's a built-in phase
+  if (phase in SDD_PHASE_LABELS) {
+    return SDD_PHASE_LABELS[phase as SddPhase][lang];
+  }
+  
+  // Custom phase: return the phase name as-is (will be overridden by displayName in UI)
+  return phase;
 }
 
 // ─── Parsed Model ──────────────────────────────────────────────────────────
@@ -89,13 +95,16 @@ export interface GeminiCategorization {
 // ─── Scoring ──────────────────────────────────────────────────────────────
 
 export interface PhaseAssignment {
-  phase: SddPhase;
+  phase: SddPhase | string; // Support custom phases (string)
   phaseLabel: string;
   primary: ModelRecord;
   fallbacks: ModelRecord[];
   score: number;
   reason: string;
   warnings: string[];
+  /** Confidence score (0-1) for the primary model when it was categorized by AI.
+   *  Only set when primary.discoveredByAI === true. */
+  aiConfidence?: number;
 }
 
 export interface TeamProfile {
@@ -119,6 +128,7 @@ export interface TeamRecommendation {
 
 export interface OptimizeRequest {
   modelList: string;
+  customPhases?: CustomSddPhase[];
 }
 
 export interface OptimizeResponse {
@@ -171,4 +181,60 @@ export interface DeployResponse {
 export interface DeployErrorResponse {
   success: false;
   error: string;
+}
+
+// ─── Advanced Options ──────────────────────────────────────────────────────
+
+export interface ModelLimit {
+  providerId: string;
+  modelId: string;
+  maxUses: number;
+}
+
+export interface PhasePreference {
+  phase: SddPhase;
+  providerId: string;
+  modelId: string;
+}
+
+export interface ModelExclusion {
+  phase: SddPhase;
+  providerId: string;
+  modelId: string;
+}
+
+export type AccountTier = "free" | "tier1" | "tier2" | "tier3";
+
+export interface ProviderAccountTier {
+  providerId: string;
+  tier: AccountTier;
+}
+
+export interface AdvancedOptions {
+  modelLimits: ModelLimit[];
+  phasePreferences: PhasePreference[];
+  modelExclusions: ModelExclusion[];
+  accountTiers: ProviderAccountTier[];
+}
+
+export interface RecreateQueryPayload {
+  input: string;
+  advancedOptions?: AdvancedOptions;
+  sourceJobId?: string;
+}
+
+export interface CustomSddPhase {
+  name: string;
+  displayName: string;
+  description?: string;
+  categoryWeights: Record<string, number>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CustomPhaseInput {
+  name: string;
+  displayName: string;
+  description?: string;
+  categoryWeights: Record<string, number>;
 }

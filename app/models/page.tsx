@@ -15,6 +15,8 @@ import { motion, AnimatePresence } from "motion/react";
 import { cn } from "@/lib/utils/cn";
 import type { ModelRecord, Tier } from "@/types";
 import ModelDetailModal from "@/components/models/ModelDetailModal";
+import { ViewModeSelector, type ViewMode } from "@/components/shared/ViewModeSelector";
+import { getSessionKey } from "@/lib/session/session-manager";
 
 // ─── Debounce hook ────────────────────────────────────────────────────────────
 
@@ -51,6 +53,17 @@ export default function ModelsPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedModelId, setSelectedModelId] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<ViewMode>(() => {
+    if (typeof window === "undefined") return "grid";
+    const sessionKey = getSessionKey("modelsViewMode");
+    const saved = localStorage.getItem(sessionKey) as ViewMode | null;
+    return saved ?? "grid";
+  });
+  
+  useEffect(() => {
+    const sessionKey = getSessionKey("modelsViewMode");
+    localStorage.setItem(sessionKey, viewMode);
+  }, [viewMode]);
 
   const debouncedQuery = useDebounce(query, 320);
   const abortRef = useRef<AbortController | null>(null);
@@ -118,7 +131,8 @@ export default function ModelsPage() {
         </div>
 
         {/* Filter Bar */}
-        <div className="w-full md:w-auto flex flex-col md:flex-row gap-2">
+        <div className="w-full md:w-auto flex flex-col md:flex-row gap-4">
+          <ViewModeSelector mode={viewMode} onChange={setViewMode} />
           <div className="relative">
             <Search
               className="absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant"
@@ -172,41 +186,79 @@ export default function ModelsPage() {
         )}
       </AnimatePresence>
 
-      {/* ── Models Grid ────────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-1">
-        {loading &&
-          models.length === 0 &&
-          Array.from({ length: 6 }).map((_, i) => (
-            <ModelCardSkeleton key={i} />
-          ))}
+      {/* ── Models Display Area ────────────────────────────────────────────── */}
+      {viewMode === "table" ? (
+        <div className="bg-surface-container-low overflow-x-auto">
+          <table className="w-full text-left font-mono text-xs">
+            <thead>
+              <tr className="text-on-surface-variant border-b border-outline-variant/10">
+                <th className="px-6 py-4 font-normal uppercase tracking-widest">MODEL ID</th>
+                <th className="px-6 py-4 font-normal uppercase tracking-widest">TIER</th>
+                <th className="px-6 py-4 font-normal uppercase tracking-widest">CONTEXT WINDOW</th>
+                <th className="px-6 py-4 font-normal uppercase tracking-widest">COST/1M</th>
+              </tr>
+            </thead>
+            <tbody className="text-on-surface">
+              {models.map((model) => (
+                <tr key={model.id} className="border-b border-outline-variant/5 hover:bg-surface-container-highest/50 cursor-pointer" onClick={() => setSelectedModelId(model.id)}>
+                  <td className="px-6 py-4 max-w-[160px] break-words">{model.id}</td>
+                  <td className={cn("px-6 py-4", TIER_ACCENT[model.tier])}>{model.tier}</td>
+                  <td className="px-6 py-4">{(model.contextWindow / 1000).toFixed(0)}k</td>
+                  <td className="px-6 py-4">${model.costPer1M.toFixed(2)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div className={cn(
+          "grid gap-1",
+          viewMode === "grid" && "grid-cols-1 md:grid-cols-2 xl:grid-cols-3",
+          viewMode === "list" && "grid-cols-1",
+          viewMode === "compact" && "grid-cols-2 md:grid-cols-4 xl:grid-cols-6"
+        )}>
+          {loading &&
+            models.length === 0 &&
+            Array.from({ length: 6 }).map((_, i) => (
+              <ModelCardSkeleton key={i} />
+            ))}
 
-        <AnimatePresence>
-          {models.map((model, i) => (
-            <motion.div
-              key={model.id}
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.2, delay: i * 0.02 }}
-            >
-              <ModelCard model={model} onClick={() => setSelectedModelId(model.id)} />
-            </motion.div>
-          ))}
-        </AnimatePresence>
+          <AnimatePresence>
+            {models.map((model, i) => (
+              <motion.div
+                key={model.id}
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.2, delay: i * 0.02 }}
+                className={cn(viewMode === "compact" && "h-24")}
+              >
+                {viewMode === "compact" ? (
+                  <button onClick={() => setSelectedModelId(model.id)} className="w-full h-full p-2 bg-surface-container-low hover:bg-surface-container-high text-left">
+                    <div className="font-mono text-[9px] uppercase tracking-wider truncate">{model.name}</div>
+                    <div className={cn("font-bold font-mono text-[10px]", TIER_ACCENT[model.tier])}>{model.tier}</div>
+                  </button>
+                ) : (
+                  <ModelCard model={model} onClick={() => setSelectedModelId(model.id)} />
+                )}
+              </motion.div>
+            ))}
+          </AnimatePresence>
+        </div>
+      )}
 
-        {/* Empty state */}
-        {!loading && models.length === 0 && !error && (
-          <div className="col-span-full py-20 text-center">
-            <p className="font-mono text-xs text-on-surface-variant uppercase tracking-widest">
-              [ NO MODELS FOUND ]
-            </p>
-            <p className="font-mono text-[10px] text-on-surface-variant/40 mt-2">
-              Ajusta los filtros o verifica la conexión a la base de datos
-            </p>
-          </div>
-        )}
+      {/* Empty state */}
+      {!loading && models.length === 0 && !error && (
+        <div className="col-span-full py-20 text-center">
+          <p className="font-mono text-xs text-on-surface-variant uppercase tracking-widest">
+            [ NO MODELS FOUND ]
+          </p>
+          <p className="font-mono text-[10px] text-on-surface-variant/40 mt-2">
+            Ajusta los filtros o verifica la conexión a la base de datos
+          </p>
+        </div>
+      )}
 
-</div>
 
       {/* ── Model Detail Modal ─────────────────────────────────────────────── */}
       <ModelDetailModal
@@ -230,13 +282,16 @@ export default function ModelsPage() {
                   <th className="px-6 py-4 font-normal uppercase tracking-widest">TIER</th>
                   <th className="px-6 py-4 font-normal uppercase tracking-widest">CONTEXT WINDOW</th>
                   <th className="px-6 py-4 font-normal uppercase tracking-widest">COST/1M</th>
-                  <th className="px-6 py-4 font-normal uppercase tracking-widest">STRENGTHS</th>
-                  <th className="px-6 py-4 font-normal uppercase tracking-widest">SCORE</th>
                 </tr>
               </thead>
               <tbody className="text-on-surface">
                 {models.slice(0, 10).map((model) => (
-                  <MatrixRow key={model.id} model={model} />
+                  <tr key={model.id} className="border-b border-outline-variant/5 hover:bg-surface-container-highest/50 cursor-pointer" onClick={() => setSelectedModelId(model.id)}>
+                    <td className="px-6 py-4 max-w-[160px] break-words">{model.id}</td>
+                    <td className={cn("px-6 py-4", TIER_ACCENT[model.tier])}>{model.tier}</td>
+                    <td className="px-6 py-4">{(model.contextWindow / 1000).toFixed(0)}k</td>
+                    <td className="px-6 py-4">${model.costPer1M.toFixed(2)}</td>
+                  </tr>
                 ))}
               </tbody>
             </table>

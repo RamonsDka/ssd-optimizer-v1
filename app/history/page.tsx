@@ -5,10 +5,13 @@
 // Client component — fetches on mount + handles pagination.
 
 import { useState, useEffect, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { Loader2, RefreshCw, ChevronLeft, ChevronRight, Clock, CheckCircle, XCircle, AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
 import type { HistoryJobSummary, HistoryResponse } from "@/app/api/history/route";
 import LogDetailModal from "@/components/history/LogDetailModal";
+import { saveRecreateQueryPayload } from "@/lib/session/recreate-query";
+import type { RecreateQueryPayload } from "@/types";
 
 // ─── Status badge ─────────────────────────────────────────────────────────────
 
@@ -71,6 +74,7 @@ function formatDate(iso: string): string {
 const LIMIT = 15;
 
 export default function HistoryPage() {
+  const router = useRouter();
   const [jobs, setJobs] = useState<HistoryJobSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -101,6 +105,11 @@ export default function HistoryPage() {
       setLoading(false);
     }
   }, []);
+
+  const handleRecreate = useCallback((payload: RecreateQueryPayload) => {
+    saveRecreateQueryPayload(payload);
+    router.push("/optimizer");
+  }, [router]);
 
   useEffect(() => {
     fetchHistory(page);
@@ -277,6 +286,7 @@ export default function HistoryPage() {
       <LogDetailModal
         jobId={selectedJobId}
         onClose={() => setSelectedJobId(null)}
+        onRecreate={handleRecreate}
       />
     </div>
   );

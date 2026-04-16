@@ -23,6 +23,7 @@ export interface JobDetailResponse {
     status: string;
     input: string;
     results: unknown; // Full TeamRecommendation JSON
+    advancedOptions: unknown | null; // AdvancedOptions snapshot persisted at submission time
     selections: JobDetailModelSelection[];
     createdAt: string;
     updatedAt: string;
@@ -101,6 +102,7 @@ export async function GET(
         status: job.status,
         input: job.userInput,
         results: job.results,
+        advancedOptions: job.advancedOptions ?? null,
         selections,
         createdAt: job.createdAt.toISOString(),
         updatedAt: job.updatedAt.toISOString(),

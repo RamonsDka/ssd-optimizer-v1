@@ -9,11 +9,14 @@ import { Loader2, Zap } from "lucide-react";
 import { motion } from "motion/react";
 import { cn } from "@/lib/utils/cn";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
+import { listCustomPhases } from "@/lib/optimizer/custom-phases";
+import { readAdvancedOptions } from "@/components/optimizer/AdvancedOptions";
 import type { TeamRecommendation } from "@/types";
 
 interface InputModuleProps {
   onResult: (result: TeamRecommendation) => void;
   onError: (msg: string) => void;
+  initialValue?: string;
 }
 
 // ─── Detect model count heuristic ─────────────────────────────────────────────
@@ -24,8 +27,8 @@ function countModels(text: string): number {
   return new Set(lines.map((l) => l.toLowerCase())).size;
 }
 
-export default function InputModule({ onResult, onError }: InputModuleProps) {
-  const [value, setValue] = useState("");
+export default function InputModule({ onResult, onError, initialValue = "" }: InputModuleProps) {
+  const [value, setValue] = useState(initialValue);
   const [loading, setLoading] = useState(false);
   const [focused, setFocused] = useState(false);
   const { t, lang } = useLanguage();
@@ -40,8 +43,19 @@ export default function InputModule({ onResult, onError }: InputModuleProps) {
       const res = await fetch("/api/optimize", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ modelList: value }),
+        body: JSON.stringify({
+          modelList: value,
+          customPhases: listCustomPhases(),
+          advancedOptions: readAdvancedOptions() ?? undefined,
+        }),
       });
+
+      const contentType = res.headers.get("content-type") ?? "";
+      if (!contentType.includes("application/json")) {
+        const raw = await res.text();
+        onError(`HTTP ${res.status}: ${raw.slice(0, 160)}`);
+        return;
+      }
 
       const json = await res.json();
 

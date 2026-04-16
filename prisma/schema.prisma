@@ -88,12 +88,13 @@ model SyncLog {
 // ─── Optimization Jobs ────────────────────────────────────────────────────────
 
 model OptimizationJob {
-  id         String    @id @default(cuid())
-  userInput  String    @db.Text
-  results    Json      // TeamRecommendation JSON
-  status     JobStatus @default(PENDING)
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
+  id              String    @id @default(cuid())
+  userInput       String    @db.Text
+  results         Json      // TeamRecommendation JSON
+  advancedOptions Json?     // AdvancedOptions snapshot at submission time
+  status          JobStatus @default(PENDING)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   selections ModelSelection[]
 

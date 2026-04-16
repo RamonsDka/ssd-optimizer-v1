@@ -4,9 +4,24 @@
 //
 // Formula: arena*0.7 + context*0.15 + cost*0.1 + tier*0.05
 
-import type { ModelRecord, SddPhase, Tier } from "@/types";
+import type { ModelRecord, SddPhase, Tier, CustomSddPhase } from "@/types";
 import { getRelevantCategories } from "./category-mapper";
+import type { LMArenaCategory } from "@/lib/sync/lmarena-client";
 import { prisma } from "@/lib/db/prisma";
+import { categorizeModel } from "@/lib/ai/embedding-service";
+
+const BUILT_IN_PHASES: SddPhase[] = [
+  "sdd-explore",
+  "sdd-propose",
+  "sdd-spec",
+  "sdd-design",
+  "sdd-tasks",
+  "sdd-apply",
+  "sdd-verify",
+  "sdd-archive",
+  "sdd-init",
+  "sdd-onboard",
+];
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -155,16 +170,39 @@ export function normalizeArenaScore(
  * Calculate weighted arena score for a phase using category weights.
  * Returns 0-1 normalized score.
  * 
- * @param phase         SDD phase to score for
+ * Supports both built-in SDD phases and custom phases.
+ * For custom phases, uses weights from custom-phases.ts.
+ * 
+ * @param phase         SDD phase to score for (built-in or custom)
  * @param arenaScores   Arena scores for this model
  * @param fallbackScore Optional fallback score for models without arena data (default: 0.5)
  */
 export function calculateArenaWeightedScore(
-  phase: SddPhase,
+  phase: SddPhase | string,
   arenaScores: Map<string, ArenaScoreData>,
-  fallbackScore = 0.5
+  fallbackScore = 0.5,
+  customPhases: CustomSddPhase[] = []
 ): number {
-  const categoryWeights = getRelevantCategories(phase);
+  // Check if this is a custom phase
+  let categoryWeights: Array<{ category: LMArenaCategory; weight: number }>;
+  
+  if (!BUILT_IN_PHASES.includes(phase as SddPhase)) {
+    // Custom phase: get weights from custom-phases.ts
+    const customWeights = customPhases.find((item) => item.name === phase)?.categoryWeights;
+    if (!customWeights) {
+      // Custom phase not found, use fallback
+      return fallbackScore;
+    }
+    
+    // Convert Record to Array format
+    categoryWeights = Object.entries(customWeights).map(([category, weight]) => ({
+      category: category as LMArenaCategory,
+      weight,
+    }));
+  } else {
+    // Built-in phase: use category-mapper.ts
+    categoryWeights = getRelevantCategories(phase as SddPhase);
+  }
 
   let weightedSum = 0;
   let totalWeight = 0;
@@ -267,12 +305,13 @@ export interface ScoringComponents {
  */
 export function scoreModel(
   model: ModelRecord,
-  phase: SddPhase,
+  phase: SddPhase | string,
   arenaScores: Map<string, ArenaScoreData>,
   preferredTier: Tier,
-  fallbackScore = 0.5
+  fallbackScore = 0.5,
+  customPhases: CustomSddPhase[] = []
 ): ScoringComponents {
-  const arena = calculateArenaWeightedScore(phase, arenaScores, fallbackScore);
+  const arena = calculateArenaWeightedScore(phase, arenaScores, fallbackScore, customPhases);
   const context = calculateContextScore(model.contextWindow);
   const cost = calculateCostScore(model.costPer1M);
   const tier = calculateTierPreferenceScore(model.tier, preferredTier);
@@ -302,12 +341,18 @@ export function scoreModel(
  * - Model has been synced recently
  */
 export function calculateConfidence(
-  phase: SddPhase,
+  phase: SddPhase | string,
   arenaScores: Map<string, ArenaScoreData>,
-  model: ModelRecord
+  model: ModelRecord,
+  customPhases: CustomSddPhase[] = []
 ): number {
-  const categoryWeights = getRelevantCategories(phase);
-  const requiredCategories = categoryWeights.length;
+  const customPhase = customPhases.find((item) => item.name === phase);
+  const categoryWeights = !BUILT_IN_PHASES.includes(phase as SddPhase)
+    ? customPhase
+      ? Object.entries(customPhase.categoryWeights).map(([category, weight]) => ({ category: category as LMArenaCategory, weight }))
+      : []
+    : getRelevantCategories(phase as SddPhase);
+  const requiredCategories = Math.max(1, categoryWeights.length);
   const availableCategories = categoryWeights.filter(({ category }) =>
     arenaScores.has(category)
   ).length;
@@ -345,48 +390,162 @@ export interface ModelScore {
   confidence: number;
 }
 
+// ─── Embedding-based Fallback ─────────────────────────────────────────────────
+
+/**
+ * Derive an arena-weighted score for a model that has NO LM Arena scores,
+ * using semantic similarity between the model's capabilities (obtained via
+ * `categorizeModel`) and the categories required by the given phase.
+ *
+ * Algorithm:
+ * 1. Get the phase's category weights (built-in or custom).
+ * 2. Call `categorizeModel` to get confidence values per LM Arena category.
+ * 3. For each phase category, look up the embedding-derived confidence; use
+ *    it as a proxy for an arena score (already in [0, 1]).
+ * 4. Compute the weighted average — same formula as `calculateArenaWeightedScore`.
+ *
+ * Returns a value in [0, 1].  Falls back to `batchFallback` if the embedding
+ * service throws (e.g. when the model is not running in Node.js).
+ */
+async function deriveEmbeddingFallbackScore(
+  model: ModelRecord,
+  phase: SddPhase | string,
+  customPhases: CustomSddPhase[],
+  batchFallback: number
+): Promise<number> {
+  try {
+    // Determine phase category weights (reuse existing logic).
+    let categoryWeights: Array<{ category: LMArenaCategory; weight: number }>;
+
+    if (!BUILT_IN_PHASES.includes(phase as SddPhase)) {
+      const customPhase = customPhases.find((p) => p.name === phase);
+      if (!customPhase) return batchFallback;
+      categoryWeights = Object.entries(customPhase.categoryWeights).map(
+        ([category, weight]) => ({ category: category as LMArenaCategory, weight })
+      );
+    } else {
+      categoryWeights = getRelevantCategories(phase as SddPhase);
+    }
+
+    if (categoryWeights.length === 0) return batchFallback;
+
+    // Build a description from model strengths for richer embedding input.
+    const description = model.strengths.length > 0
+      ? model.strengths.join(", ")
+      : "";
+
+    const capabilities = await categorizeModel(model.name, description);
+
+    // Build a quick lookup: category → confidence.
+    const confidenceByCategory = new Map<string, number>(
+      capabilities.categories.map(
+        (entry: { category: string; confidence: number }): [string, number] => [
+          entry.category,
+          entry.confidence,
+        ]
+      )
+    );
+
+    // Weighted average of per-category embedding confidences.
+    let weightedSum = 0;
+    let totalWeight = 0;
+
+    for (const { category, weight } of categoryWeights) {
+      const confidence = confidenceByCategory.get(category);
+      if (confidence !== undefined) {
+        weightedSum += confidence * weight;
+        totalWeight += weight;
+      }
+    }
+
+    if (totalWeight === 0) return batchFallback;
+
+    return weightedSum / totalWeight;
+  } catch {
+    // Embedding service unavailable (e.g. browser context, missing model).
+    // Silently fall back to the batch average — non-fatal.
+    return batchFallback;
+  }
+}
+
 /**
  * Score multiple models for a phase in batch.
  * Fetches arena scores once for all models.
- * 
- * Models without arena data receive a fallback score equal to the average
- * arena score of models that DO have data in this batch. This prevents
- * new models from being unfairly penalized or over-represented.
+ *
+ * Models without LM Arena data first attempt to derive a score via semantic
+ * embedding similarity (`categorizeModel`). If the embedding service is
+ * unavailable, they fall back to the average arena score of models that DO
+ * have data in this batch (or 0.5 if none). This prevents new/unknown models
+ * from being unfairly penalized or over-represented.
  */
 export async function scoreModelsBatch(
   models: ModelRecord[],
   phase: SddPhase,
-  preferredTier: Tier
+  preferredTier: Tier,
+  customPhases: CustomSddPhase[] = []
 ): Promise<ModelScore[]> {
   const modelIds = models.map((m) => m.id);
   const arenaScoresBatch = await fetchArenaScoresBatch(modelIds);
 
-  // First pass: calculate arena scores for models WITH data
+  // ── Pass 1: arena scores for models WITH LM Arena data ──────────────────
   const arenaScoresWithData: number[] = [];
-  
+
   for (const model of models) {
     const arenaScores = arenaScoresBatch.get(model.id);
     if (arenaScores && arenaScores.size > 0) {
-      const score = calculateArenaWeightedScore(phase, arenaScores, 0.5);
+      const score = calculateArenaWeightedScore(phase, arenaScores, 0.5, customPhases);
       arenaScoresWithData.push(score);
     }
   }
 
-  // Calculate fallback as average of models with arena data
-  const fallbackScore = arenaScoresWithData.length > 0
-    ? arenaScoresWithData.reduce((sum, score) => sum + score, 0) / arenaScoresWithData.length
-    : 0.5; // If no models have arena data, use neutral 0.5
+  // Batch average (used as final fallback when embedding is unavailable).
+  const batchAvgFallback =
+    arenaScoresWithData.length > 0
+      ? arenaScoresWithData.reduce((sum, s) => sum + s, 0) / arenaScoresWithData.length
+      : 0.5;
 
-  // Second pass: score all models using the calculated fallback
+  // ── Pass 2: embedding-based fallback for models WITHOUT arena data ───────
+  // Run all embedding calls in parallel for efficiency.
+  const modelsWithoutArena = models.filter((m) => {
+    const scores = arenaScoresBatch.get(m.id);
+    return !scores || scores.size === 0;
+  });
+
+  const embeddingFallbackMap = new Map<string, number>();
+
+  if (modelsWithoutArena.length > 0) {
+    const fallbackResults = await Promise.all(
+      modelsWithoutArena.map((model) =>
+        deriveEmbeddingFallbackScore(model, phase, customPhases, batchAvgFallback).then(
+          (score) => ({ modelId: model.id, score })
+        )
+      )
+    );
+
+    for (const { modelId, score } of fallbackResults) {
+      embeddingFallbackMap.set(modelId, score);
+    }
+  }
+
+  // ── Pass 3: score all models ─────────────────────────────────────────────
   return models.map((model) => {
     const arenaScores = arenaScoresBatch.get(model.id) ?? new Map();
-    const components = scoreModel(model, phase, arenaScores, preferredTier, fallbackScore);
-    const confidence = calculateConfidence(phase, arenaScores, model);
 
-    return {
+    // Choose the best available fallback for this specific model.
+    const fallbackScore = embeddingFallbackMap.has(model.id)
+      ? embeddingFallbackMap.get(model.id)!
+      : batchAvgFallback;
+
+    const components = scoreModel(
       model,
-      components,
-      confidence,
-    };
+      phase,
+      arenaScores,
+      preferredTier,
+      fallbackScore,
+      customPhases
+    );
+    const confidence = calculateConfidence(phase, arenaScores, model, customPhases);
+
+    return { model, components, confidence };
   });
 }

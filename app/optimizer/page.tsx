@@ -12,6 +12,8 @@ import { useState, useCallback, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Trash2, Rocket, CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
 import InputModule from "@/components/optimizer/InputModule";
+import AdvancedOptions from "@/components/optimizer/AdvancedOptions";
+import CustomPhasesManager from "@/components/optimizer/CustomPhasesManager";
 import { ViewModeSelector, type ViewMode } from "@/components/shared/ViewModeSelector";
 import ProfileSelector from "@/components/optimizer/ProfileSelector";
 import DataMatrix from "@/components/optimizer/DataMatrix";
@@ -22,32 +24,38 @@ import GuideSteps from "@/components/optimizer/GuideSteps";
 import { useOptimizerPersistence } from "@/lib/hooks/useOptimizerPersistence";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { getSessionKey } from "@/lib/session/session-manager";
-import type { Tier, PhaseAssignment, SddPhase, DeployResponse } from "@/types";
+import { clearRecreateQueryPayload, readRecreateQueryPayload } from "@/lib/session/recreate-query";
+import type { Tier, PhaseAssignment, SddPhase, DeployResponse, RecreateQueryPayload } from "@/types";
 
 export default function OptimizerPage() {
   const { recommendation, save, clear, isHydrating } = useOptimizerPersistence();
   const { t, lang } = useLanguage();
   const [activeTier, setActiveTier] = useState<Tier>("BALANCED");
-  const [viewMode, setViewMode] = useState<ViewMode>("grid");
-  const [error, setError] = useState<string | null>(null);
-  
-  useEffect(() => {
+  const [recreatePayload] = useState<RecreateQueryPayload | null>(() => readRecreateQueryPayload());
+  const [viewMode, setViewMode] = useState<ViewMode>(() => {
+    if (typeof window === "undefined") return "grid";
+
     const sessionKey = getSessionKey("viewMode");
     const saved = localStorage.getItem(sessionKey) as ViewMode | null;
-    if (saved) setViewMode(saved);
-  }, []);
+    return saved ?? "grid";
+  });
+  const [error, setError] = useState<string | null>(null);
+  const [loadingProfiles, setLoadingProfiles] = useState(false);
+  const [selectedPhase, setSelectedPhase] = useState<SddPhase | string | null>(null);
+  const [selectedPhaseAssignment, setSelectedPhaseAssignment] = useState<PhaseAssignment | null>(null);
 
   useEffect(() => {
+    if (recreatePayload) {
+      clearRecreateQueryPayload();
+    }
+  }, [recreatePayload]);
+
+  // Persist viewMode to localStorage on every change
+  useEffect(() => {
+    if (typeof window === "undefined") return;
     const sessionKey = getSessionKey("viewMode");
     localStorage.setItem(sessionKey, viewMode);
   }, [viewMode]);
-  const [loadingProfiles, setLoadingProfiles] = useState(false);
-  const [selectedPhase, setSelectedPhase] = useState<SddPhase | null>(null);
-  const [selectedPhaseAssignment, setSelectedPhaseAssignment] = useState<PhaseAssignment | null>(null);
-  
-  const [deployLoading, setDeployLoading] = useState(false);
-  const [deployResult, setDeployResult] = useState<DeployResponse | null>(null);
-  const [deployError, setDeployError] = useState<string | null>(null);
 
   const handlePhaseClick = useCallback((assignment: PhaseAssignment) => {
     setSelectedPhase(assignment.phase);
@@ -75,40 +83,8 @@ export default function OptimizerPage() {
     clear();
     setActiveTier("BALANCED");
     setError(null);
-    setDeployResult(null);
-    setDeployError(null);
   }, [clear]);
 
-  // Handle deploy
-  const handleDeploy = useCallback(async () => {
-    if (!recommendation?.jobId || deployLoading) return;
-
-    setDeployLoading(true);
-    setDeployError(null);
-    setDeployResult(null);
-
-    try {
-      const res = await fetch("/api/deploy", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ jobId: recommendation.jobId, tier: activeTier }),
-      });
-
-      const json = await res.json();
-
-      if (!res.ok || !json.success) {
-        setDeployError(json.error ?? `Error ${res.status}`);
-        return;
-      }
-
-      setDeployResult(json as DeployResponse);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "Network error";
-      setDeployError(msg);
-    } finally {
-      setDeployLoading(false);
-    }
-  }, [recommendation, activeTier, deployLoading]);
 
   // Derive per-profile stats for ProfileSelector
   const profileStats = recommendation
@@ -149,7 +125,17 @@ export default function OptimizerPage() {
       <ErrorBanner message={error} onDismiss={() => setError(null)} />
 
       {/* ── Step 1: Input ────────────────────────────────────────────────────── */}
-      <InputModule onResult={handleResult} onError={handleError} />
+      <InputModule
+        onResult={handleResult}
+        onError={handleError}
+        initialValue={recreatePayload?.input ?? ""}
+      />
+      
+      {/* ── Advanced Options ──────────────────────────────────────────────────── */}
+      <AdvancedOptions initialOptions={recreatePayload?.advancedOptions ?? null} />
+
+      {/* ── Custom Phases ─────────────────────────────────────────────────────── */}
+      <CustomPhasesManager />
       
       {recommendation && (
         <ViewModeSelector mode={viewMode} onChange={setViewMode} className="mb-6" />
@@ -218,106 +204,6 @@ export default function OptimizerPage() {
               onSelect={setActiveTier}
               stats={profileStats}
             />
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* ── Deploy Section ────────────────────────────────────────────────────── */}
-      <AnimatePresence>
-        {recommendation && recommendation.jobId && (
-          <motion.div
-            key="deploy-section"
-            initial={{ opacity: 0, y: 16 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.3, ease: "easeOut" }}
-            className="border-l-4 border-secondary bg-surface-container p-6 space-y-4"
-          >
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="font-mono text-sm font-bold uppercase tracking-widest text-secondary">
-                  {lang === "es" ? "Deploy 1-Click" : "1-Click Deploy"}
-                </h3>
-                <p className="text-xs text-on-surface-variant mt-1">
-                  {lang === "es"
-                    ? `Aplicar configuración ${activeTier} a tu equipo SDD`
-                    : `Apply ${activeTier} configuration to your SDD team`}
-                </p>
-              </div>
-              <button
-                onClick={handleDeploy}
-                disabled={deployLoading || !!deployResult}
-                className="flex items-center gap-2 px-6 py-3 bg-secondary text-on-secondary font-mono text-xs uppercase tracking-widest hover:bg-secondary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                {deployLoading ? (
-                  <>
-                    <Loader2 size={14} className="animate-spin" />
-                    <span>{lang === "es" ? "Desplegando..." : "Deploying..."}</span>
-                  </>
-                ) : deployResult ? (
-                  <>
-                    <CheckCircle2 size={14} />
-                    <span>{lang === "es" ? "Desplegado" : "Deployed"}</span>
-                  </>
-                ) : (
-                  <>
-                    <Rocket size={14} />
-                    <span>{lang === "es" ? "Desplegar" : "Deploy"}</span>
-                  </>
-                )}
-              </button>
-            </div>
-
-            {/* Deploy Error */}
-            {deployError && (
-              <motion.div
-                initial={{ opacity: 0, y: -8 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="flex items-start gap-3 p-4 bg-error-container border border-error/30 text-error"
-              >
-                <AlertCircle size={16} className="shrink-0 mt-0.5" />
-                <div className="text-xs">
-                  <p className="font-bold uppercase tracking-wider mb-1">
-                    {lang === "es" ? "Error de Deploy" : "Deploy Error"}
-                  </p>
-                  <p className="text-on-error-container">{deployError}</p>
-                </div>
-              </motion.div>
-            )}
-
-            {/* Deploy Success */}
-            {deployResult && (
-              <motion.div
-                initial={{ opacity: 0, y: -8 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="p-4 bg-tertiary-container border border-tertiary/30"
-              >
-                <div className="flex items-center gap-2 mb-3">
-                  <CheckCircle2 size={16} className="text-tertiary" />
-                  <p className="font-mono text-xs font-bold uppercase tracking-widest text-tertiary">
-                    {lang === "es" ? "Deploy Exitoso" : "Deploy Successful"}
-                  </p>
-                </div>
-                <div className="grid grid-cols-2 gap-4 text-xs">
-                  <div>
-                    <span className="text-on-surface-variant uppercase tracking-wider">
-                      {lang === "es" ? "Aplicadas:" : "Applied:"}
-                    </span>
-                    <span className="ml-2 font-bold text-tertiary">
-                      {deployResult.appliedCount}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-on-surface-variant uppercase tracking-wider">
-                      {lang === "es" ? "Omitidas:" : "Skipped:"}
-                    </span>
-                    <span className="ml-2 font-bold text-on-surface">
-                      {deployResult.skippedCount}
-                    </span>
-                  </div>
-                </div>
-              </motion.div>
-            )}
           </motion.div>
         )}
       </AnimatePresence>

@@ -17,7 +17,7 @@ import { SDD_PHASE_LABELS } from "@/types";
 
 interface ModelDetailModalProps {
   model: ModelRecord | null;
-  phase: SddPhase | null;
+  phase: SddPhase | string | null; // Support custom phases
   reason: string | null;
   score: number | null;
   onClose: () => void;
@@ -91,7 +91,10 @@ export default function ModelDetailModal({
 
   if (!mounted || typeof document === "undefined") return null;
 
-  const phaseLabel = phase ? SDD_PHASE_LABELS[phase].en : "";
+  // Get phase label - handle both built-in and custom phases
+  const phaseLabel = phase 
+    ? (phase in SDD_PHASE_LABELS ? SDD_PHASE_LABELS[phase as SddPhase].en : phase)
+    : "";
 
   return createPortal(
     <AnimatePresence>

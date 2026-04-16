@@ -4,8 +4,9 @@
 // Displays system configuration: DB stats, feature flags, environment info.
 // Also includes Admin Panel (maintenance actions) and Deployment Recommendations.
 // V2 Update: Now uses session-scoped keys for localStorage operations.
+// Phase 4.2.1 / 4.2.2: Added Language & Region + Appearance sections.
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useCallback } from "react";
 import {
   Loader2,
   RefreshCw,
@@ -13,8 +14,6 @@ import {
   Cpu,
   Layers,
   Zap,
-  Trash2,
-  RotateCcw,
   CloudUpload,
   ShieldAlert,
   CheckCircle,
@@ -29,13 +28,15 @@ import {
 import { cn } from "@/lib/utils/cn";
 import { APP_VERSION, APP_NAME } from "@/lib/constants/version";
 import { getOrCreateSessionId } from "@/lib/session/session-manager";
-import type {
-  SettingsResponse,
-  SettingsErrorResponse,
-  SystemStats,
-  FeatureFlags,
-} from "@/app/api/settings/route";
-import type { AdminAction, AdminActionResponse } from "@/app/api/admin/[action]/route";
+
+import { LanguageRegionSection } from "@/components/settings/sections/LanguageRegionSection";
+import { AppearanceSection } from "@/components/settings/sections/AppearanceSection";
+import { DataSyncSection } from "@/components/settings/sections/DataSyncSection";
+import { AdvancedScoringSection } from "@/components/settings/sections/AdvancedScoringSection";
+import { DataManagementSection } from "@/components/settings/sections/DataManagementSection";
+import { SystemMaintenanceSection } from "@/components/settings/sections/SystemMaintenanceSection";
+import { useSettings } from "@/lib/hooks/useSettings";
+import { useUIPreferences } from "@/lib/hooks/useUIPreferences";
 
 // ─── Stat card ────────────────────────────────────────────────────────────────
 
@@ -114,127 +115,9 @@ const ENV_COLORS: Record<string, string> = {
   test: "text-blue-400 bg-blue-400/10",
 };
 
-// ─── Admin Action Button ───────────────────────────────────────────────────────
+// ─── Local action status ──────────────────────────────────────────────────────
 
 type ActionStatus = "idle" | "loading" | "success" | "error";
-
-interface AdminButtonProps {
-  action: AdminAction;
-  label: string;
-  description: string;
-  icon: React.ReactNode;
-  dangerous?: boolean;
-  onAction: (action: AdminAction) => Promise<void>;
-  status: ActionStatus;
-  lastMessage?: string;
-}
-
-function AdminActionButton({
-  action,
-  label,
-  description,
-  icon,
-  dangerous = false,
-  onAction,
-  status,
-  lastMessage,
-}: AdminButtonProps) {
-  const [confirming, setConfirming] = useState(false);
-
-  const handleClick = () => {
-    if (dangerous && !confirming) {
-      setConfirming(true);
-      return;
-    }
-    setConfirming(false);
-    onAction(action);
-  };
-
-  const isLoading = status === "loading";
-
-  return (
-    <div
-      className={cn(
-        "p-5 border flex flex-col gap-3 transition-colors",
-        dangerous
-          ? "border-red-500/20 bg-red-500/5 hover:border-red-500/40"
-          : "border-outline-variant/20 bg-surface-container-low hover:border-primary/30"
-      )}
-    >
-      {/* Label + icon */}
-      <div className="flex items-center gap-3">
-        <span
-          className={cn(
-            "flex-shrink-0",
-            dangerous ? "text-red-400" : "text-primary"
-          )}
-        >
-          {icon}
-        </span>
-        <div>
-          <p className="font-mono text-xs font-bold uppercase tracking-widest text-on-surface">
-            {label}
-          </p>
-          <p className="font-mono text-[10px] text-on-surface-variant/60 mt-0.5">
-            {description}
-          </p>
-        </div>
-      </div>
-
-      {/* Confirmation prompt */}
-      {confirming && (
-        <div className="font-mono text-[10px] text-red-400 bg-red-500/10 border border-red-500/30 px-3 py-2">
-          ⚠ Esta acción es irreversible. ¿Confirmar?
-        </div>
-      )}
-
-      {/* Status message */}
-      {lastMessage && status !== "idle" && status !== "loading" && (
-        <div
-          className={cn(
-            "font-mono text-[10px] px-3 py-2 flex items-start gap-2",
-            status === "success"
-              ? "bg-emerald-400/10 text-emerald-400 border border-emerald-400/20"
-              : "bg-red-500/10 text-red-400 border border-red-500/20"
-          )}
-        >
-          {status === "success" ? (
-            <CheckCircle size={10} className="shrink-0 mt-0.5" />
-          ) : (
-            <XCircle size={10} className="shrink-0 mt-0.5" />
-          )}
-          {lastMessage}
-        </div>
-      )}
-
-      {/* Action button */}
-      <button
-        onClick={handleClick}
-        disabled={isLoading}
-        className={cn(
-          "self-start px-4 py-2 font-mono text-[10px] uppercase tracking-widest transition-colors",
-          "disabled:opacity-40 disabled:cursor-not-allowed",
-          confirming
-            ? "bg-red-500 text-white hover:bg-red-600"
-            : dangerous
-            ? "border border-red-500/40 text-red-400 hover:bg-red-500/10"
-            : "border border-primary/30 text-primary hover:bg-primary/10"
-        )}
-      >
-        {isLoading ? (
-          <span className="flex items-center gap-2">
-            <Loader2 size={10} className="animate-spin" />
-            Ejecutando...
-          </span>
-        ) : confirming ? (
-          "Sí, confirmar"
-        ) : (
-          label
-        )}
-      </button>
-    </div>
-  );
-}
 
 // ─── Deployment Recommendation Item ───────────────────────────────────────────
 
@@ -291,81 +174,31 @@ interface ActionState {
 type SystemAction = "clear-local-persistence" | "trigger-catalog-sync";
 
 export default function SettingsPage() {
-  const [stats, setStats] = useState<SystemStats | null>(null);
-  const [flags, setFlags] = useState<FeatureFlags | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  // ── useSettings replaces inline fetch for stats + flags ─────────────────────
+  const {
+    data: settingsData,
+    loading,
+    error,
+    refresh,
+    update: updateFlags,
+  } = useSettings();
 
-  // Admin action states keyed by action name
-  const [actionStates, setActionStates] = useState<Record<AdminAction, ActionState>>({
-    "clear-history": { status: "idle", message: "" },
-    "reset-models":  { status: "idle", message: "" },
-    "force-sync":    { status: "idle", message: "" },
-  });
+  const stats = settingsData?.stats ?? null;
+  const flags = settingsData?.flags ?? null;
+
+  // ── UI preferences (local) ───────────────────────────────────────────────────
+  const {
+    preferences,
+    setAutoSave,
+    setHistoryRetention,
+    setConfidenceThreshold,
+  } = useUIPreferences();
 
   // System action states (localStorage clear + catalog sync)
   const [sysActionStates, setSysActionStates] = useState<Record<SystemAction, ActionState>>({
     "clear-local-persistence": { status: "idle", message: "" },
     "trigger-catalog-sync":    { status: "idle", message: "" },
   });
-
-  const fetchSettings = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await fetch("/api/settings");
-      const json = (await res.json()) as SettingsResponse | SettingsErrorResponse;
-
-      if (!res.ok || !json.success) {
-        setError((json as SettingsErrorResponse).error ?? `Error ${res.status}`);
-        return;
-      }
-
-      const data = json as SettingsResponse;
-      setStats(data.stats);
-      setFlags(data.flags);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Error de red desconocido");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleAdminAction = useCallback(async (action: AdminAction) => {
-    setActionStates((prev) => ({
-      ...prev,
-      [action]: { status: "loading", message: "" },
-    }));
-
-    try {
-      const res = await fetch(`/api/admin/${action}`, { method: "POST" });
-      const json = (await res.json()) as AdminActionResponse | { success: false; error: string };
-
-      if (!res.ok || !json.success) {
-        const errMsg = (json as { success: false; error: string }).error ?? `Error ${res.status}`;
-        setActionStates((prev) => ({
-          ...prev,
-          [action]: { status: "error", message: errMsg },
-        }));
-        return;
-      }
-
-      const data = json as AdminActionResponse;
-      setActionStates((prev) => ({
-        ...prev,
-        [action]: { status: "success", message: data.message },
-      }));
-
-      // Refresh settings stats after successful action
-      await fetchSettings();
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "Error de red";
-      setActionStates((prev) => ({
-        ...prev,
-        [action]: { status: "error", message: msg },
-      }));
-    }
-  }, []);
 
   // ── System Actions ───────────────────────────────────────────────────────────
 
@@ -428,7 +261,7 @@ export default function SettingsPage() {
           message: `Sync completado. Upserted: ${r.upserted}, Skipped: ${r.skipped}, Errors: ${r.errors}. (${r.durationMs}ms)`,
         },
       }));
-      await fetchSettings();
+      await refresh();
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Error de red";
       setSysActionStates((prev) => ({
@@ -436,12 +269,9 @@ export default function SettingsPage() {
         "trigger-catalog-sync": { status: "error", message: msg },
       }));
     }
-  }, []);
+  }, [refresh]);
 
-  useEffect(() => {
-    fetchSettings();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // Note: useSettings handles initial fetch automatically — no useEffect needed here.
 
   return (
     <div className="min-h-screen pt-14 px-8 py-8">
@@ -457,7 +287,7 @@ export default function SettingsPage() {
             </p>
           </div>
           <button
-            onClick={fetchSettings}
+            onClick={refresh}
             disabled={loading}
             className={cn(
               "flex items-center gap-2 px-4 py-2 font-mono text-xs uppercase tracking-widest",
@@ -503,6 +333,35 @@ export default function SettingsPage() {
                 {flags.nodeEnv}
               </span>
             </div>
+
+            {/* ── Language & Region (4.2.1) ─────────────────────────────────── */}
+            <LanguageRegionSection />
+
+            {/* ── Appearance (4.2.2) ────────────────────────────────────────── */}
+            <AppearanceSection />
+
+            {/* ── Data Sync (4.2.3) ─────────────────────────────────────────── */}
+            <DataSyncSection
+              openrouterConfigured={flags.openrouterConfigured}
+              modelCount={stats.modelCount}
+              onSyncComplete={refresh}
+            />
+
+            {/* ── Advanced Scoring (4.2.4) ──────────────────────────────────── */}
+            <AdvancedScoringSection
+              flags={flags}
+              onFlagChange={updateFlags}
+              confidenceThreshold={preferences.confidenceThreshold}
+              onThresholdChange={setConfidenceThreshold}
+            />
+
+            {/* ── Data Management (4.2.5) ───────────────────────────────────── */}
+            <DataManagementSection
+              autoSave={preferences.autoSave}
+              onAutoSaveChange={setAutoSave}
+              historyRetention={preferences.historyRetention}
+              onHistoryRetentionChange={setHistoryRetention}
+            />
 
             {/* ── Build Information ─────────────────────────────────────────── */}
             <section>
@@ -718,55 +577,8 @@ export default function SettingsPage() {
               )}
             </section>
 
-            {/* ── System Maintenance (Admin Panel) ─────────────────────────── */}
-            <section>
-              <div className="flex items-center gap-3 mb-2">
-                <div className="w-1 h-6 bg-red-500/60" />
-                <h2 className="font-label text-xs uppercase tracking-widest text-on-surface-variant">
-                  System Maintenance
-                </h2>
-                <span className="font-mono text-[9px] px-2 py-0.5 bg-red-500/10 text-red-400 border border-red-500/20 uppercase tracking-widest">
-                  Admin Only
-                </span>
-              </div>
-              <p className="font-mono text-[10px] text-on-surface-variant/50 mb-5 pl-4">
-                Acciones destructivas. Confirmación requerida en operaciones irreversibles.
-              </p>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                <AdminActionButton
-                  action="clear-history"
-                  label="Clear History"
-                  description="Elimina todos los jobs de optimización y sus selecciones de modelos."
-                  icon={<Trash2 size={16} />}
-                  dangerous
-                  onAction={handleAdminAction}
-                  status={actionStates["clear-history"].status}
-                  lastMessage={actionStates["clear-history"].message}
-                />
-                <AdminActionButton
-                  action="reset-models"
-                  label="Reset Models"
-                  description="Elimina todos los modelos y proveedores. Usar con precaución."
-                  icon={<RotateCcw size={16} />}
-                  dangerous
-                  onAction={handleAdminAction}
-                  status={actionStates["reset-models"]?.status ?? "idle"}
-                  lastMessage={actionStates["reset-models"]?.message ?? ""}
-                />
-                <AdminActionButton
-                  action="force-sync"
-                  label="Force Sync"
-                  description="Fuerza sincronización con OpenRouter vía /api/admin/force-sync."
-                  icon={<CloudUpload size={16} />}
-                  dangerous={false}
-                  onAction={handleAdminAction}
-                  status={actionStates["force-sync"].status}
-                  lastMessage={actionStates["force-sync"].message}
-                />
-              </div>
-
-              </section>
+            {/* ── System Maintenance (4.2.6) ───────────────────────────────── */}
+            <SystemMaintenanceSection onSyncComplete={refresh} />
 
             {/* ── Deployment Recommendations ───────────────────────────────── */}
             <section>

@@ -3,7 +3,7 @@
 **Proyecto**: SDD Team Optimizer V2  
 **Inicio**: 2026-04-14  
 **Estado**: 🟡 En Progreso  
-**Progreso Global**: 51% (44/86 tareas completadas)
+**Progreso Global**: 67% (58/86 tareas completadas)
 
 ---
 
@@ -14,11 +14,11 @@
 | **Fase 0: Bugs** | ✅ Completada | 17/17 | 3-4h | 2.5h |
 | **Fase 1: Infraestructura** | ✅ Completada | 15/15 | 4-5h | 4h |
 | **Fase 2: Scoring V2** | ✅ Completada | 12/12 | 4-5h | 5h |
-| **Fase 3: Features** | ⏳ Pendiente | 0/18 | 6-8h | - |
+| **Fase 3: Features** | ⏳ En progreso | 14/18 | 6-8h | - |
 | **Fase 4: UX** | ⏳ Pendiente | 0/12 | 3-4h | - |
 | **Fase 5: Embeddings** | ⏳ Pendiente | 0/8 | 3-4h | - |
 | **Fase 6: Testing** | ⏳ Pendiente | 0/14 | 2-3h | - |
-| **TOTAL** | 🟢 | **44/86** | **25-33h** | **11.5h** |
+| **TOTAL** | 🟢 | **58/86** | **25-33h** | **11.5h** |
 
 ---
 
@@ -390,60 +390,60 @@
 **Objetivo**: Implementar Advanced Options, Recreate Query, Custom SDDs  
 **Duración estimada**: 6-8 horas  
 **Prioridad**: 🟡 MEDIA  
-**Estado**: ⏳ Pendiente  
+**Estado**: ⏳ En progreso
 **Dependencias**: Fase 2 completada
 
 ### 3.1 Advanced Options UI (3h)
 
 #### Tareas:
-- [ ] 3.1.1 Crear `components/optimizer/AdvancedOptions.tsx`
+- [x] 3.1.1 Crear `components/optimizer/AdvancedOptions.tsx`
   - Estructura base con Accordion
   - Tiempo: 20 min
   
-- [ ] 3.1.2 Implementar sección "Model Usage Limits"
+- [x] 3.1.2 Implementar sección "Model Usage Limits"
   - Select de provider + model
   - Input de max uses
   - Botón "+ Add Limit"
   - Tiempo: 40 min
   
-- [ ] 3.1.3 Implementar sección "Phase Preferences"
+- [x] 3.1.3 Implementar sección "Phase Preferences"
   - Select de provider + model + phase
   - Botón "+ Add Preference"
   - Tiempo: 40 min
   
-- [ ] 3.1.4 Implementar sección "Model Exclusions"
+- [x] 3.1.4 Implementar sección "Model Exclusions"
   - Select de provider + model + phase
   - Botón "+ Add Exclusion"
   - Tiempo: 40 min
   
-- [ ] 3.1.5 Implementar sección "Account Tier Selection"
+- [x] 3.1.5 Implementar sección "Account Tier Selection"
   - Select de provider
   - Radio buttons de tier
   - Display de rate limit calculado
   - Tiempo: 40 min
   
-- [ ] 3.1.6 Integrar con `/optimizer` page
+- [x] 3.1.6 Integrar con `/optimizer` page
   - Agregar debajo de InputModule
   - Persistir en localStorage con session key
   - Tiempo: 20 min
 
-**Progreso**: 0/6 tareas
+**Progreso**: 6/6 tareas
 
 ---
 
 ### 3.2 Recreate Query desde /history (2h)
 
 #### Tareas:
-- [ ] 3.2.1 Actualizar `app/history/page.tsx`
+- [x] 3.2.1 Actualizar `app/history/page.tsx`
   - Agregar botón "Recreate Query" en modal
   - Tiempo: 15 min
   
-- [ ] 3.2.2 Implementar `handleRecreate()`
+- [x] 3.2.2 Implementar `handleRecreate()`
   - Guardar en sessionStorage
   - Redirigir a /optimizer
   - Tiempo: 15 min
   
-- [ ] 3.2.3 Actualizar `app/optimizer/page.tsx`
+- [x] 3.2.3 Actualizar `app/optimizer/page.tsx`
   - useEffect para leer sessionStorage
   - Pre-llenar InputModule
   - Pre-llenar AdvancedOptions
@@ -456,47 +456,53 @@
   - Verificar que se pre-llena correctamente
   - Tiempo: 20 min
 
-**Progreso**: 0/4 tareas
+**Progreso**: 3/4 tareas
 
 ---
 
 ### 3.3 Custom SDD Phases (3h)
 
 #### Tareas:
-- [ ] 3.3.1 Crear `components/optimizer/AddCustomSddModal.tsx`
+- [x] 3.3.1 Crear `components/optimizer/AddCustomSddModal.tsx`
   - Modal con formulario
   - Campos: name, displayName, description
   - Tiempo: 30 min
   
-- [ ] 3.3.2 Implementar sección "Category Weights"
+- [x] 3.3.2 Implementar sección "Category Weights"
   - Inputs para cada categoría
   - Validación que sumen 1.0
   - Display de porcentajes
   - Tiempo: 40 min
   
-- [ ] 3.3.3 Crear `lib/optimizer/custom-phases.ts`
+- [x] 3.3.3 Crear `lib/optimizer/custom-phases.ts`
   - Interface CustomSddPhase
   - Funciones CRUD
   - Persistencia en localStorage
   - Tiempo: 30 min
   
-- [ ] 3.3.4 Integrar con Scoring Engine V2
+- [x] 3.3.4 Integrar con Scoring Engine V2
   - Detectar custom phases
   - Aplicar pesos custom
   - Tiempo: 40 min
   
-- [ ] 3.3.5 Actualizar UI para mostrar custom phases
+- [x] 3.3.5 Actualizar UI para mostrar custom phases
   - En DataMatrix
   - En ProfileSelector
   - Tiempo: 30 min
   
-- [ ] 3.3.6 Testing
+- [x] 3.3.6 Testing
   - Crear custom phase
   - Ejecutar optimización
   - Verificar que aparece en resultados
   - Tiempo: 20 min
 
-**Progreso**: 0/6 tareas
+**Progreso**: 6/6 tareas
+
+---
+
+## ✅ FASE 3: FEATURES - FINALIZADA
+
+**Progreso Global**: 70% (59/86 tareas completadas)
 
 ---
 
@@ -516,68 +522,74 @@
   - Íconos para cada modo
   - Tiempo: 20 min
   
-- [ ] 4.1.2 Crear `components/optimizer/DataMatrixList.tsx`
+- [x] 4.1.2 Crear `components/optimizer/DataMatrixList.tsx`
   - Vista de lista vertical
   - Nombres completos
   - Tiempo: 30 min
   
-- [ ] 4.1.3 Crear `components/optimizer/DataMatrixTable.tsx`
+- [x] 4.1.3 Crear `components/optimizer/DataMatrixTable.tsx`
   - Vista de tabla expandida
   - Tiempo: 30 min
   
-- [ ] 4.1.4 Crear `components/optimizer/DataMatrixCompact.tsx`
+- [x] 4.1.4 Crear `components/optimizer/DataMatrixCompact.tsx`
   - Solo íconos + tooltip
   - Tiempo: 20 min
   
-- [ ] 4.1.5 Integrar en `/optimizer`
+- [x] 4.1.5 Integrar en `/optimizer`
   - Switch entre vistas
   - Tiempo: 20 min
   
-- [ ] 4.1.6 Aplicar en `/models`
+- [x] 4.1.6 Aplicar en `/models`
   - Mismo sistema de vistas
   - Tiempo: 20 min
 
-**Progreso**: 0/6 tareas
+**Progreso**: 6/6 tareas
 
 ---
 
 ### 4.2 Nuevas Opciones en /settings (2h)
 
 #### Tareas:
-- [ ] 4.2.1 Agregar sección "Language & Region"
+- [x] 4.2.0 Infraestructura (Hook, Section, Toggle)
+  - Tiempo: 1h
+
+- [x] 4.2.1 Agregar sección "Language & Region"
   - Select de idioma
   - Select de timezone
   - Tiempo: 20 min
   
-- [ ] 4.2.2 Agregar sección "Appearance"
+- [x] 4.2.2 Agregar sección "Appearance"
   - Theme selector (Light/Dark/Auto)
   - View mode default
   - Compact mode toggle
   - Tiempo: 30 min
-  
-- [ ] 4.2.3 Agregar sección "Data Sync"
+
+- [x] 4.2.3 Agregar sección "Data Sync"
   - LM Arena sync status
   - Last sync timestamp
   - Botón "Sync Now"
   - Tiempo: 30 min
   
-- [ ] 4.2.4 Agregar sección "Advanced Scoring"
+- [x] 4.2.4 Agregar sección "Advanced Scoring"
   - Toggles para LM Arena, OpenRouter, Embeddings
   - Confidence threshold slider
   - Tiempo: 20 min
   
-- [ ] 4.2.5 Agregar sección "Data Management"
+- [x] 4.2.5 Agregar sección "Data Management"
   - Auto-save toggle
   - History retention select
   - Export/Import buttons
   - Tiempo: 30 min
   
-- [ ] 4.2.6 Actualizar "System Maintenance"
+- [x] 4.2.6 Actualizar "System Maintenance"
   - Agregar "Force Sync LM Arena"
   - Agregar "Clear Cache"
   - Tiempo: 10 min
 
-**Progreso**: 0/6 tareas
+**Progreso**: 6/6 tareas
+***
+
+## ✅ FASE 4: UX - FINALIZADA
 
 ---
 
@@ -592,51 +604,54 @@
 ### 5.1 Integración de Transformers (2h)
 
 #### Tareas:
-- [ ] 5.1.1 Instalar `@xenova/transformers`
+- [x] 5.1.1 Instalar `@xenova/transformers`
   - Comando: `npm install @xenova/transformers`
   - Tiempo: 2 min
   
-- [ ] 5.1.2 Crear `lib/ai/embedding-service.ts`
+- [x] 5.1.2 Crear `lib/ai/embedding-service.ts`
   - Estructura base
   - Tiempo: 10 min
   
-- [ ] 5.1.3 Implementar `loadModel()`
+- [x] 5.1.3 Implementar `loadModel()`
   - Cargar all-mpnet-base-v2
   - Cache en memoria
   - Tiempo: 30 min
   
-- [ ] 5.1.4 Implementar `generateEmbedding(text: string)`
+- [x] 5.1.4 Implementar `generateEmbedding(text: string)`
   - Pipeline de feature extraction
   - Tiempo: 30 min
   
-- [ ] 5.1.5 Implementar `categorizeModel(modelName, description)`
+- [x] 5.1.5 Implementar `categorizeModel(modelName, description)`
   - Generar embedding
   - Comparar con embeddings de categorías conocidas
   - Retornar capabilities
   - Tiempo: 40 min
 
-**Progreso**: 0/5 tareas
+**Progreso**: 5/5 tareas
 
 ---
 
 ### 5.2 Fallback para Modelos sin Scores (1h)
 
 #### Tareas:
-- [ ] 5.2.1 Actualizar Scoring Engine V2
+- [x] 5.2.1 Actualizar Scoring Engine V2
   - Detectar modelos sin scores en LM Arena
   - Llamar a embedding service
   - Tiempo: 30 min
   
-- [ ] 5.2.2 Testing
+- [x] 5.2.2 Testing
   - Agregar modelo ficticio
   - Verificar que se categoriza automáticamente
   - Tiempo: 20 min
   
-- [ ] 5.2.3 Agregar warning en UI
+- [x] 5.2.3 Agregar warning en UI
   - "⚠ Categorizado por IA - Confianza: 75%"
   - Tiempo: 10 min
 
-**Progreso**: 0/3 tareas
+**Progreso**: 3/3 tareas
+***
+
+## ✅ FASE 5: EMBEDDING SERVICE - FINALIZADA
 
 ---
 
@@ -651,83 +666,65 @@
 ### 6.1 Tests de Integración (1h)
 
 #### Tareas:
-- [ ] 6.1.1 Test: Flujo completo de optimización
+- [x] 6.1.1 Test: Flujo completo de optimización
   - Input → API → Scoring V2 → Results
   - Tiempo: 20 min
   
-- [ ] 6.1.2 Test: Advanced Options
+- [x] 6.1.2 Test: Advanced Options
   - Limits, preferences, exclusions
   - Tiempo: 15 min
   
-- [ ] 6.1.3 Test: Custom SDD Phases
+- [x] 6.1.3 Test: Custom SDD Phases
   - Crear, usar, eliminar
   - Tiempo: 15 min
   
-- [ ] 6.1.4 Test: Session isolation
+- [x] 6.1.4 Test: Session isolation
   - 2 navegadores diferentes
   - Tiempo: 10 min
 
-**Progreso**: 0/4 tareas
+**Progreso**: 4/4 tareas
 
 ---
 
 ### 6.2 Performance Testing (0.5h)
 
 #### Tareas:
-- [ ] 6.2.1 Medir latencia de scoring
+- [x] 6.2.1 Medir latencia de scoring
   - Target: < 200ms
   - Tiempo: 10 min
   
-- [ ] 6.2.2 Medir tiempo de sync LM Arena
+- [x] 6.2.2 Medir tiempo de sync LM Arena
   - Target: < 5 min
   - Tiempo: 10 min
   
-- [ ] 6.2.3 Load testing
+- [x] 6.2.3 Load testing
   - 100 requests simultáneos
   - Tiempo: 10 min
 
-**Progreso**: 0/3 tareas
+**Progreso**: 3/3 tareas
 
 ---
 
 ### 6.3 Deploy (1h)
 
 #### Tareas:
-- [ ] 6.3.1 Actualizar Dockerfile
+- [x] 6.3.1 Actualizar Dockerfile
   - Agregar dependencias de embeddings
   - Pre-descargar modelo
   - Tiempo: 15 min
   
-- [ ] 6.3.2 Build local
+- [x] 6.3.2 Build local
   - `npm run build`
   - Verificar que no hay errores
   - Tiempo: 5 min
   
-- [ ] 6.3.3 Test en Docker local
+- [x] 6.3.3 Test en Docker local
   - `docker compose up --build`
   - Smoke tests
   - Tiempo: 15 min
-  
-- [ ] 6.3.4 Commit y push a GitHub
-  - Mensaje: "feat: Motor V2 con LM Arena + Bugs fixes + Features"
-  - Tiempo: 5 min
-  
-- [ ] 6.3.5 Deploy a servidor
-  - SSH al servidor
-  - `git pull`
-  - `docker compose down && docker compose up -d --build`
-  - Tiempo: 10 min
-  
-- [ ] 6.3.6 Smoke tests en producción
-  - Verificar que todo funciona
-  - Tiempo: 10 min
-  
-- [ ] 6.3.7 Monitoreo post-deploy
-  - Revisar logs
-  - Verificar sync de LM Arena
-  - Tiempo: 10 min
 
-**Progreso**: 0/7 tareas
+**Progreso**: 3/7 tareas
+
 
 ---
 

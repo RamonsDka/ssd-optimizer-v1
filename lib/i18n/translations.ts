@@ -312,6 +312,16 @@ const translations = {
     of: { es: "de", en: "of" },
     previous: { es: "Anterior", en: "Previous" },
     next: { es: "Siguiente", en: "Next" },
+    // AdvancedOptions
+    advancedOptions: { es: "Opciones Avanzadas", en: "Advanced Options" },
+    modelLimits: { es: "Límites de Uso por Modelo", en: "Model Usage Limits" },
+    modelLimitsDesc: { es: "Limita cuántas veces un modelo puede ser asignado en el equipo optimizado.", en: "Limit how many times a model can be assigned in the optimized team." },
+    phasePreferences: { es: "Preferencias por Fase", en: "Phase Preferences" },
+    phasePreferencesDesc: { es: "Forzar un modelo específico para una fase determinada.", en: "Force a specific model for a given phase." },
+    modelExclusions: { es: "Exclusiones de Modelo", en: "Model Exclusions" },
+    modelExclusionsDesc: { es: "Excluir un modelo de ser asignado a una fase específica.", en: "Exclude a model from being assigned to a specific phase." },
+    accountTiers: { es: "Tier de Cuenta por Provider", en: "Account Tier per Provider" },
+    accountTiersDesc: { es: "Define el tier de tu cuenta para cada provider (afecta rate limits).", en: "Define your account tier for each provider (affects rate limits)." },
   },
 
   // ─── History Page ───────────────────────────────────────────────────────────
