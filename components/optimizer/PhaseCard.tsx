@@ -130,7 +130,7 @@ export default function PhaseCard({ assignment, accentTier, loading = false, onP
             title={t("optimizer", "rosterTooltip")}
           >
             <Layers size={10} />
-            roster
+            {t("optimizer", "rosterLabel")}
           </button>
         )}
       </div>
@@ -262,6 +262,7 @@ function SpecChip({
  * Displays a warning indicator and the AI-derived confidence percentage.
  */
 function AICategoryBadge({ confidence }: { confidence?: number }) {
+  const { t } = useLanguage();
   const confidencePct = confidence !== undefined
     ? Math.round(confidence * 100)
     : null;
@@ -269,11 +270,11 @@ function AICategoryBadge({ confidence }: { confidence?: number }) {
   return (
     <div className="flex items-center gap-1 mt-1.5">
       <span className="text-[8px] font-mono text-secondary/80 tracking-tight leading-none">
-        ⚠ Categorizado por IA
+        ⚠ {t("optimizer", "categoryBadge")}
       </span>
       {confidencePct !== null && (
         <span className="text-[8px] font-mono text-on-surface-variant/50 tracking-tight leading-none">
-          · Confianza: {confidencePct}%
+          · {t("optimizer", "confidenceLabel")}: {confidencePct}%
         </span>
       )}
     </div>

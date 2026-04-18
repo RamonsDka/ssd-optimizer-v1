@@ -1,5 +1,13 @@
 // ─── Team Optimizer — Scoring Engine ─────────────────────────────────────────
 // Generates 3 profiles (Premium, Balanced, Economic) × 10 SDD phases.
+//
+// Feature flag: SCORING_VERSION environment variable controls which engine is active.
+//   v2 — LM Arena-based scoring (default if not set or unknown value)
+//   v3 — UnifiedModelScores 5-dimensional engine
+//   v4 — 17-dimensional engine (requires ModelCapabilities table populated)
+//
+// V4 fallback behaviour: if a model has no data in ModelCapabilities, the selector
+// automatically degrades to V3 for that specific model (transparent to the caller).
 
 import type {
   ModelRecord,
@@ -13,6 +21,17 @@ import type {
 import { SDD_PHASES, SDD_PHASE_LABELS } from "@/types";
 import type { ParsedModel } from "@/types";
 import * as ScoringV2 from "./scoring-engine-v2";
+import * as ScoringV3 from "./scoring-engine-v3";
+import type { V3ScoreResult } from "./scoring-engine-v3";
+import type {
+  ModelCapabilitiesV4,
+  ModelV4,
+  UserProfileV4,
+  ScoringResultV4,
+} from "./v4/scoring-engine-v4";
+import { finalScore as finalScoreV4, EXCLUSION_SCORE } from "./v4/scoring-engine-v4";
+import type { SddPhaseV4 } from "./v4/phase-weights";
+import { getCapabilitiesByModelId } from "@/lib/db/oim-service";
 
 // ─── Phase Weights — per-phase capability priorities ─────────────────────────
 // Keys align to ModelRecord.strengths tags
@@ -62,13 +81,71 @@ const CONTEXT_MIN_INIT = 100_000; // sdd-init requires 100k minimum
 const MAX_PRIMARY_USES_PER_MODEL = 2; // prevent a single model dominating all phases
 
 // ─── Scoring Version Config ───────────────────────────────────────────────────
-// V2 is the active scoring engine (LM Arena-based).
+// V2 is the LM Arena-based engine (fast, no DB for capabilities).
+// V3 is the OIM multi-dimensional engine (UnifiedModelScores 5D).
+// V4 is the 17-dimensional engine (ModelCapabilities table required).
 // V1 is kept for comparison/analysis only (scoreModelV1 function below).
+//
+// Feature flag: read from process.env.SCORING_VERSION at call time.
+// Valid values: "v2" | "v3" | "v4". Defaults to "v2" if not set or invalid.
 
 export interface ScoringConfig {
-  version: "v1" | "v2";
-  arenaScoresCache?: Map<string, Map<string, ScoringV2.ArenaScoreData>>; // Pre-fetched arena scores for V2
+  version: "v1" | "v2" | "v3" | "v4";
+  /** Pre-fetched arena scores for V2. Required when version === "v2". */
+  arenaScoresCache?: Map<string, Map<string, ScoringV2.ArenaScoreData>>;
+  /**
+   * Pre-fetched V3 results keyed by `${modelId}::${phase}`.
+   * Required when version === "v3". Built by generateProfiles().
+   */
+  v3ScoresCache?: Map<string, V3ScoreResult>;
+  /**
+   * Pre-fetched V4 capabilities + fallback V3 scores.
+   * Required when version === "v4". Built by generateProfiles().
+   * Key: modelId — value contains the ModelCapabilitiesV4 (may be null if no data)
+   * and the V3 fallback result for each phase.
+   */
+  v4Cache?: V4ScoringCache;
   customPhases?: CustomSddPhase[];
+}
+
+/**
+ * Cache entry for V4 scoring.
+ * Holds both the 17-dimensional capabilities (if available) and the V3 fallback.
+ */
+export interface V4ModelCacheEntry {
+  /** 17-dimensional capabilities from ModelCapabilities table. null = no V4 data yet. */
+  capabilities: ModelCapabilitiesV4 | null;
+  /** Pre-fetched V3 results keyed by `${modelId}::${phase}` for fallback. */
+  v3Fallback: Map<string, V3ScoreResult>;
+  /** true when capabilities === null → this model will use V3 fallback */
+  usesV3Fallback: boolean;
+}
+
+/** Full V4 scoring cache: modelId → entry with capabilities + V3 fallback. */
+export type V4ScoringCache = Map<string, V4ModelCacheEntry>;
+
+/** Metrics about V4 vs V3 fallback usage in the current run. */
+export interface V4CoverageMetrics {
+  totalModels: number;
+  modelsWithV4Data: number;
+  modelsUsingV3Fallback: number;
+  v4CoveragePercent: number;
+}
+
+/**
+ * Reads the SCORING_VERSION environment variable and returns a valid version string.
+ * Defaults to "v2" when the env var is not set or has an unknown value.
+ *
+ * Used by generateProfiles() to auto-detect the engine without requiring the caller
+ * to read the env directly.
+ */
+export function getScoringVersion(): "v1" | "v2" | "v3" | "v4" {
+  const raw = process.env.SCORING_VERSION?.toLowerCase().trim();
+  if (raw === "v4") return "v4";
+  if (raw === "v3") return "v3";
+  if (raw === "v1") return "v1";
+  // Default: v2 (or any unknown value falls back to v2 for safety)
+  return "v2";
 }
 
 const DEFAULT_CONFIG: ScoringConfig = { version: "v2" };
@@ -144,8 +221,180 @@ function scoreModelV2(
 }
 
 /**
+ * Compute score using V3 engine (UnifiedModelMatrix multi-dimensional).
+ * Uses pre-fetched V3 scores from the cache to avoid async calls in the
+ * synchronous build-profile loop.
+ *
+ * Cache key: `${modelId}::${phase}` (set by generateProfiles before building).
+ * Falls back to V2 or 0.4 when no cache entry is present.
+ */
+function scoreModelV3(
+  model: ModelRecord,
+  phase: SddPhase | string,
+  v3ScoresCache: Map<string, V3ScoreResult>
+): number {
+  const cacheKey = `${model.id}::${phase}`;
+  const cached = v3ScoresCache.get(cacheKey);
+  if (cached) return cached.finalScore;
+  // No V3 data for this model/phase → graceful fallback
+  return ScoringV3.NULL_DIMENSION_FALLBACK;
+}
+
+// ─── V4 Tier Mapping ─────────────────────────────────────────────────────────
+
+/**
+ * Maps the existing 3-tier system (ModelRecord.tier) to the V4 profile tiers.
+ *
+ * V4 uses a more granular tier system ("free_api", "direct_api_paid", etc.)
+ * defined in §6.1 of SDD-MODEL-SELECTION-ENGINE.md. We map the legacy 3-tier
+ * to a compatible subset so V4 eligibility scoring works correctly.
+ */
+const TIER_TO_V4_PROFILE: Record<Tier, UserProfileV4> = {
+  PREMIUM: {
+    profileId: "premium",
+    allowedTiers: ["PREMIUM", "BALANCED", "ECONOMIC"],
+    excludedTiers: [],
+  },
+  BALANCED: {
+    profileId: "balanced",
+    allowedTiers: ["BALANCED", "PREMIUM", "ECONOMIC"],
+    excludedTiers: [],
+  },
+  ECONOMIC: {
+    profileId: "economic",
+    allowedTiers: ["ECONOMIC", "BALANCED", "PREMIUM"],
+    excludedTiers: [],
+  },
+};
+
+/**
+ * Maps a V4 phase key (without "sdd-" prefix) to a full SddPhaseV4 key.
+ * SddPhaseV4 uses short names: "explore", "propose", etc.
+ * SddPhase (V2/V3) uses prefixed names: "sdd-explore", "sdd-propose", etc.
+ * Custom phases that don't match are mapped to "apply" as a safe default.
+ * Exported for testing purposes.
+ */
+export function toV4Phase(phase: SddPhase | string): SddPhaseV4 {
+  const map: Record<string, SddPhaseV4> = {
+    "sdd-explore":    "explore",
+    "sdd-propose":    "propose",
+    "sdd-spec":       "spec",
+    "sdd-design":     "design",
+    "sdd-tasks":      "tasks",
+    "sdd-apply":      "apply",
+    "sdd-verify":     "verify",
+    "sdd-archive":    "archive",
+    "sdd-init":       "init",
+    "sdd-onboard":    "onboard",
+    // Short names pass through directly
+    "explore":  "explore",
+    "propose":  "propose",
+    "spec":     "spec",
+    "design":   "design",
+    "tasks":    "tasks",
+    "apply":    "apply",
+    "verify":   "verify",
+    "archive":  "archive",
+    "init":     "init",
+    "onboard":  "onboard",
+    "orchestrator": "orchestrator",
+  };
+  return map[phase] ?? "apply";
+}
+
+/**
+ * Builds a ModelV4 from a ModelRecord + pre-fetched ModelCapabilitiesV4.
+ * ModelRecord does not have `isThinkingModel` yet (added in Prisma Phase 1).
+ * For now, we default it to false and derive it heuristically from model ID.
+ *
+ * Heuristic: model IDs containing "r1", "o1", "o3", "o4", "thinking",
+ * "magistral", "qwq" are treated as thinking models.
+ * Exported for testing purposes.
+ */
+export function buildModelV4(
+  model: ModelRecord,
+  capabilities: ModelCapabilitiesV4
+): ModelV4 {
+  const thinkingPatterns = /\b(r1|r2|o1|o3|o4|thinking|magistral|qwq|reasoner)\b/i;
+  const isThinkingModel = thinkingPatterns.test(model.id) || thinkingPatterns.test(model.name);
+
+  return {
+    modelId:             model.id,
+    isThinkingModel,
+    contextWindowTokens: model.contextWindow,
+    provider:            model.providerId,
+    tier:                model.tier,
+    capabilities,
+  };
+}
+
+/**
+ * Compute score using V4 engine (17-dimensional ModelCapabilities).
+ *
+ * Fallback behaviour:
+ * - If the model has no V4 capabilities data, automatically falls back to V3.
+ * - When fallback occurs, logs a warning via console.warn for debugging.
+ * - The fallback is transparent: the caller receives a valid [0,1] score either way.
+ *
+ * Score normalization: V4 finalScore is in [0, 10]. We normalize to [0, 1]
+ * to maintain compatibility with the existing selector pipeline.
+ */
+function scoreModelV4(
+  model: ModelRecord,
+  phase: SddPhase | string,
+  cacheEntry: V4ModelCacheEntry,
+  preferredTier: Tier
+): number {
+  // ── Fallback path: no V4 data for this model ──────────────────────────────
+  if (cacheEntry.usesV3Fallback || cacheEntry.capabilities === null) {
+    console.warn(
+      `[selector] V4 fallback → V3 for model "${model.id}" in phase "${phase}" ` +
+      `(no ModelCapabilities data)`
+    );
+    const cacheKey = `${model.id}::${phase}`;
+    const v3Result = cacheEntry.v3Fallback.get(cacheKey);
+    if (v3Result) return v3Result.finalScore;
+    return ScoringV3.NULL_DIMENSION_FALLBACK;
+  }
+
+  // ── V4 path: compute 17-dimensional score ─────────────────────────────────
+  const modelV4 = buildModelV4(model, cacheEntry.capabilities);
+  const profile = TIER_TO_V4_PROFILE[preferredTier];
+  const v4Phase = toV4Phase(phase);
+
+  const result: ScoringResultV4 = finalScoreV4(modelV4, v4Phase, profile);
+
+  // Excluded models get score 0 (they will never be picked as primary)
+  if (result.excluded || result.finalScore <= EXCLUSION_SCORE) {
+    return 0;
+  }
+
+  // Normalize from [0, 10] to [0, 1] for compatibility with the scoring pipeline
+  return Math.max(0, Math.min(1, result.finalScore / 10));
+}
+
+/**
+ * Compute V4 coverage metrics from the cache.
+ * Used for logging and telemetry in generateProfiles().
+ * Exported for testing purposes.
+ */
+export function computeV4Coverage(cache: V4ScoringCache): V4CoverageMetrics {
+  const total = cache.size;
+  const withV4 = [...cache.values()].filter((e) => !e.usesV3Fallback).length;
+  const withFallback = total - withV4;
+  return {
+    totalModels: total,
+    modelsWithV4Data: withV4,
+    modelsUsingV3Fallback: withFallback,
+    v4CoveragePercent: total === 0 ? 0 : Math.round((withV4 / total) * 100),
+  };
+}
+
+/**
  * Unified scoring function with version selection.
- * Default: V1 (backward compatible).
+ * Default: V2 (LM Arena-based).
+ *
+ * V4 path: uses 17-dimensional engine with automatic V3 fallback per model.
  */
 export function scoreModel(
   model: ModelRecord,
@@ -153,6 +402,31 @@ export function scoreModel(
   config: ScoringConfig = DEFAULT_CONFIG,
   preferredTier?: Tier
 ): number {
+  if (config.version === "v4") {
+    if (!config.v4Cache) {
+      throw new Error("V4 scoring requires v4Cache in config");
+    }
+    if (!preferredTier) {
+      throw new Error("V4 scoring requires preferredTier parameter");
+    }
+    const cacheEntry = config.v4Cache.get(model.id);
+    if (!cacheEntry) {
+      // Model not in cache at all — treat as V3 fallback with neutral score
+      console.warn(
+        `[selector] V4 cache miss for model "${model.id}" — using neutral fallback score`
+      );
+      return ScoringV3.NULL_DIMENSION_FALLBACK;
+    }
+    return scoreModelV4(model, phase, cacheEntry, preferredTier);
+  }
+
+  if (config.version === "v3") {
+    if (!config.v3ScoresCache) {
+      throw new Error("V3 scoring requires v3ScoresCache in config");
+    }
+    return scoreModelV3(model, phase, config.v3ScoresCache);
+  }
+
   if (config.version === "v2") {
     if (!config.arenaScoresCache) {
       throw new Error("V2 scoring requires arenaScoresCache in config");
@@ -163,7 +437,7 @@ export function scoreModel(
     return scoreModelV2(model, phase, preferredTier, config.arenaScoresCache, config.customPhases);
   }
 
-  // V1 (default)
+  // V1 (legacy — tag-based)
   return scoreModelV1(model, phase);
 }
 
@@ -178,11 +452,16 @@ function rankModelsForPhase(
 ): ModelRecord[] {
   const preferredTier = preferredTierOrder[0]; // First tier in order is the preferred one
 
-  const scored = models.map((m) => ({
-    model: m,
-    score: scoreModel(m, phase, config, preferredTier),
-    tierIdx: preferredTierOrder.indexOf(m.tier),
-  }));
+  const scored = models.map((m) => {
+    const idx = preferredTierOrder.indexOf(m.tier);
+    return {
+      model: m,
+      score: scoreModel(m, phase, config, preferredTier),
+      // indexOf returns -1 when the tier is not in the order list.
+      // Using Infinity pushes unknown tiers to the end instead of the top.
+      tierIdx: idx === -1 ? Infinity : idx,
+    };
+  });
 
   // Sort: tier order first (lower idx = better), then score descending
   scored.sort((a, b) => {
@@ -342,10 +621,11 @@ export async function generateProfiles(
   dbFallback: ModelRecord[],
   parsedModels: ParsedModel[],
   unresolved: string[],
-  options?: { version?: "v1" | "v2"; customPhases?: CustomSddPhase[]; strict?: boolean }
+  options?: { version?: "v1" | "v2" | "v3" | "v4"; customPhases?: CustomSddPhase[]; strict?: boolean }
 ): Promise<TeamRecommendation> {
-  const resolvedVersion = options?.version || "v2"; // Default switched to V2
-  const strict = options?.strict ?? false;
+  // Read feature flag: caller can override, otherwise auto-detect from env
+  const resolvedVersion = options?.version ?? getScoringVersion();
+  const strict = options?.strict ?? true; // Default to strict mode: only use user-provided models
 
   // Pool resolution:
   // - strict=true  → use ONLY inputModels (no DB fallback contamination)
@@ -369,10 +649,126 @@ export async function generateProfiles(
   if (options?.customPhases?.length) {
     finalConfig.customPhases = options.customPhases;
   }
+
   if (resolvedVersion === "v2") {
     const modelIds = pool.map((m) => m.id);
     const arenaScoresCache = await ScoringV2.fetchArenaScoresBatch(modelIds);
     finalConfig = { ...finalConfig, arenaScoresCache };
+  }
+
+  if (resolvedVersion === "v3") {
+    // Pre-fetch V3 scores for all model×phase combinations to keep
+    // buildProfile() synchronous. Cache key: `${modelId}::${phase}`.
+    const customPhases = options?.customPhases ?? [];
+    const allPhases: Array<SddPhase | string> = [
+      ...SDD_PHASES,
+      ...customPhases.map((p) => p.name),
+    ];
+    const modelIds = pool.map((m) => m.id);
+
+    const v3ScoresCache = new Map<string, V3ScoreResult>();
+    const batchResults = await Promise.all(
+      allPhases.map((phase) =>
+        ScoringV3.scoreModelsBatchV3(modelIds, phase, customPhases).then((results) =>
+          results.map(({ modelId, result }) => ({ modelId, phase, result }))
+        )
+      )
+    );
+
+    for (const phaseResults of batchResults) {
+      for (const { modelId, phase, result } of phaseResults) {
+        v3ScoresCache.set(`${modelId}::${phase}`, result);
+      }
+    }
+
+    finalConfig = { ...finalConfig, v3ScoresCache };
+  }
+
+  if (resolvedVersion === "v4") {
+    // ── V4 cache construction ────────────────────────────────────────────────
+    // 1. Fetch ModelCapabilities from DB for each model (async, parallel).
+    // 2. Also pre-fetch V3 scores as fallback for models with no V4 data.
+    // 3. Build V4ScoringCache (modelId → { capabilities, v3Fallback, usesV3Fallback }).
+    //
+    // Fallback trigger: model has no row in ModelCapabilities → use V3.
+    // This is transparent to buildProfile() — it just calls scoreModel() normally.
+
+    const customPhases = options?.customPhases ?? [];
+    const allPhases: Array<SddPhase | string> = [
+      ...SDD_PHASES,
+      ...customPhases.map((p) => p.name),
+    ];
+    const modelIds = pool.map((m) => m.id);
+
+    // Step 1: Fetch V4 capabilities for all models in parallel
+    const capabilitiesResults = await Promise.all(
+      modelIds.map(async (modelId) => {
+        try {
+          const caps = await getCapabilitiesByModelId(modelId);
+          return { modelId, capabilities: caps };
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          console.warn(`[selector] Failed to fetch V4 capabilities for "${modelId}": ${msg}`);
+          return { modelId, capabilities: null };
+        }
+      })
+    );
+
+    // Step 2: Identify which models need V3 fallback
+    const fallbackModelIds = capabilitiesResults
+      .filter((r) => r.capabilities === null)
+      .map((r) => r.modelId);
+
+    // Step 3: Pre-fetch V3 scores ONLY for fallback models (optimization)
+    const v3FallbackScoresMap = new Map<string, Map<string, V3ScoreResult>>();
+
+    if (fallbackModelIds.length > 0) {
+      console.warn(
+        `[selector] V4 engine: ${fallbackModelIds.length}/${modelIds.length} model(s) ` +
+        `have no ModelCapabilities data → falling back to V3: [${fallbackModelIds.join(", ")}]`
+      );
+
+      const v3BatchResults = await Promise.all(
+        allPhases.map((phase) =>
+          ScoringV3.scoreModelsBatchV3(fallbackModelIds, phase, customPhases).then((results) =>
+            results.map(({ modelId, result }) => ({ modelId, phase, result }))
+          )
+        )
+      );
+
+      for (const phaseResults of v3BatchResults) {
+        for (const { modelId, phase, result } of phaseResults) {
+          if (!v3FallbackScoresMap.has(modelId)) {
+            v3FallbackScoresMap.set(modelId, new Map());
+          }
+          v3FallbackScoresMap.get(modelId)!.set(`${modelId}::${phase}`, result);
+        }
+      }
+    }
+
+    // Step 4: Build the V4ScoringCache
+    const v4Cache: V4ScoringCache = new Map();
+
+    for (const { modelId, capabilities } of capabilitiesResults) {
+      const usesV3Fallback = capabilities === null;
+      const v3Fallback = v3FallbackScoresMap.get(modelId) ?? new Map<string, V3ScoreResult>();
+
+      v4Cache.set(modelId, {
+        capabilities: capabilities as ModelCapabilitiesV4 | null,
+        v3Fallback,
+        usesV3Fallback,
+      });
+    }
+
+    // Log coverage metrics for debugging
+    const metrics = computeV4Coverage(v4Cache);
+    console.info(
+      `[selector] V4 coverage: ${metrics.modelsWithV4Data}/${metrics.totalModels} models ` +
+      `(${metrics.v4CoveragePercent}%) using V4, ` +
+      `${metrics.modelsUsingV3Fallback} using V3 fallback`
+    );
+
+    finalConfig = { ...finalConfig, v4Cache };
   }
 
   const premium = buildProfile(pool, "PREMIUM", finalConfig, strict);

@@ -6,8 +6,9 @@
 //   reset-models   — Deletes all providers (cascades models and selections via schema)
 //   force-sync     — Triggers OpenRouter model sync (same as POST /api/sync)
 //
-// WARNING: These are destructive operations. No auth guard (dev tool).
-//          Add middleware auth before exposing in production.
+// Security: requires a valid ADMIN_PASSWORD in the Authorization header.
+//   Header format: Authorization: Bearer <ADMIN_PASSWORD>
+//   The ADMIN_PASSWORD env var MUST be set in production.
 
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
@@ -30,6 +31,28 @@ export interface AdminActionResponse {
 export interface AdminActionErrorResponse {
   success: false;
   error: string;
+}
+
+// ─── Auth guard ───────────────────────────────────────────────────────────────
+
+/**
+ * Validate the incoming request against ADMIN_PASSWORD.
+ * Expected header: Authorization: Bearer <ADMIN_PASSWORD>
+ *
+ * Returns true when the request is authorized, false otherwise.
+ * When ADMIN_PASSWORD is not set in env, the guard rejects ALL requests
+ * to prevent accidental production exposure with no credentials.
+ */
+function isAuthorized(req: NextRequest): boolean {
+  const adminPassword = process.env.ADMIN_PASSWORD;
+
+  // Reject when the env variable is missing or empty — fail-closed.
+  if (!adminPassword) return false;
+
+  const authHeader = req.headers.get("authorization") ?? "";
+  const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
+
+  return token === adminPassword;
 }
 
 // ─── Action handlers ──────────────────────────────────────────────────────────
@@ -76,6 +99,14 @@ export async function POST(
   _req: NextRequest,
   { params }: { params: Promise<{ action: string }> }
 ): Promise<NextResponse<AdminActionResponse | AdminActionErrorResponse>> {
+  // ── Auth check ──────────────────────────────────────────────────────────────
+  if (!isAuthorized(_req)) {
+    return NextResponse.json(
+      { success: false, error: "Unauthorized. Provide a valid Authorization: Bearer <ADMIN_PASSWORD> header." },
+      { status: 401 }
+    );
+  }
+
   try {
     const { action } = await params;
 

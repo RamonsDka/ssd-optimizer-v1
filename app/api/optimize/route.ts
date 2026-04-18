@@ -1,13 +1,30 @@
 // ─── POST /api/optimize ───────────────────────────────────────────────────────
 // Pipeline: Parse → DB Lookup → AI Categorize (unknown) → Score → Return
+//
+// The `scoringVersion` query-param (or request-body field) allows callers to
+// override which engine is used for A/B testing purposes:
+//   ?version=v2  → force V2 (LM Arena)
+//   ?version=v3  → force V3 (OIM multi-dimensional)
+//   ?version=v4  → force V4 (17-dimensional — requires ModelCapabilities table)
+//   ?version=env → read SCORING_VERSION environment variable
+//   (omit)       → "env" strategy — SCORING_VERSION env var governs the default
+//
+// Default is "env" so the SCORING_VERSION feature flag controls production behavior
+// without requiring callers to pass an explicit version parameter.
+//
+// Add ?debug=true to include score breakdown and fallback metadata in the response.
+// The debug field is NEVER included by default to keep payloads lean.
+//
+// The resolved version is persisted in OptimizationJob.scoringVersion.
 
 import { NextRequest, NextResponse } from "next/server";
 import { parseModelList } from "@/lib/optimizer/parser";
-import { generateProfiles } from "@/lib/optimizer/selector";
+import { runOrchestratedScoring } from "@/lib/optimizer/oim-orchestrator";
+import type { ScoringStrategy } from "@/lib/optimizer/oim-orchestrator";
 import { getGeminiClient } from "@/lib/ai/gemini";
 import { prisma } from "@/lib/db/prisma";
 import { Prisma } from "@prisma/client";
-import type { ModelRecord, OptimizeResponse, OptimizeErrorResponse, OptimizeRequest, CustomSddPhase, TeamProfile } from "@/types";
+import type { ModelRecord, OptimizeResponse, OptimizeErrorResponse, OptimizeRequest, CustomSddPhase, TeamProfile, DebugInfo } from "@/types";
 import type { Tier } from "@/types";
 import { SDD_PHASES } from "@/types";
 
@@ -32,10 +49,27 @@ export async function POST(
       );
     }
 
-    const { modelList, customPhases, advancedOptions } = body as OptimizeRequest & {
+    const { modelList, customPhases, advancedOptions, scoringVersion: bodyScoringVersion } = body as OptimizeRequest & {
       customPhases?: unknown;
       advancedOptions?: unknown;
+      scoringVersion?: unknown;
     };
+
+    // Resolve the scoring strategy:
+    // 1. Query-param  ?version=v2|v3|v4|env
+    // 2. Request-body scoringVersion field
+    // 3. Default: "env" — lets SCORING_VERSION env var govern the engine.
+    //    This ensures the feature flag controls default production behavior.
+    const searchParams = new URL(req.url).searchParams;
+    const qpVersion = searchParams.get("version");
+    const rawStrategy = qpVersion ?? (typeof bodyScoringVersion === "string" ? bodyScoringVersion : null) ?? "env";
+    const strategy: ScoringStrategy =
+      rawStrategy === "v2" || rawStrategy === "v3" || rawStrategy === "v4" || rawStrategy === "env"
+        ? rawStrategy
+        : "env";
+
+    // ?debug=true → include scoreBreakdown + fallback metadata in response
+    const debugMode = searchParams.get("debug") === "true";
     if (typeof modelList !== "string" || !modelList.trim()) {
       return NextResponse.json(
         { success: false, error: "`modelList` must be a non-empty string" },
@@ -158,13 +192,19 @@ export async function POST(
       ? [] // strict mode: skip the expensive DB full-scan
       : await prisma.model.findMany().then((rows) => rows.map(prismaToModelRecord));
 
-    // 7. Generate profiles
-    const recommendation = await generateProfiles(
+    // 7. Generate profiles via OIM Orchestrator (V2/V3/auto strategy)
+    const orchestratorResult = await runOrchestratedScoring(
       inputModels,
       dbFallback,
       parsed,
       unresolved,
-      { version: "v2", customPhases: customPhasesList, strict }
+      { strategy, customPhases: customPhasesList, strict }
+    );
+    const recommendation = orchestratorResult.recommendation;
+    const resolvedScoringVersion = orchestratorResult.scoringVersion;
+
+    console.log(
+      `[POST /api/optimize] Scoring engine: ${resolvedScoringVersion} (strategy: ${strategy}, fallback: ${orchestratorResult.fallback.usedFallback})`
     );
 
     // 8. Persist optimization job + model selections (atomic transaction)
@@ -177,6 +217,7 @@ export async function POST(
           advancedOptions: advancedOptions && typeof advancedOptions === "object"
             ? (advancedOptions as unknown as Prisma.InputJsonValue)
             : Prisma.JsonNull,
+          scoringVersion: resolvedScoringVersion,
           status: "COMPLETED",
         },
       });
@@ -194,7 +235,26 @@ export async function POST(
 
     console.log(`[POST /api/optimize] Job ${job.id} created with ${selectionsCount} model selections`);
 
-    return NextResponse.json({ success: true, jobId: job.id, data: recommendation });
+    // Build debug payload only when requested (keeps default response lean)
+    const debugPayload: DebugInfo | undefined = debugMode
+      ? {
+          resolvedScoringVersion,
+          fallback: orchestratorResult.fallback,
+          // scoreBreakdown is only available when V4 engine ran AND v4Results
+          // were collected. Currently v4Results are null (selector-internal);
+          // set to null to communicate "not available at this engine version".
+          scoreBreakdown: null,
+          specialRulesApplied: null,
+        }
+      : undefined;
+
+    return NextResponse.json({
+      success: true,
+      jobId: job.id,
+      data: recommendation,
+      scoringVersion: resolvedScoringVersion,
+      ...(debugPayload !== undefined && { debug: debugPayload }),
+    } satisfies OptimizeResponse);
   } catch (err) {
     console.error("[POST /api/optimize] Error DETALLADO:", err);
     const message = err instanceof Error ? err.message : "Internal server error";

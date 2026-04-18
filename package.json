@@ -15,14 +15,16 @@
     "sync:openrouter": "tsx lib/sync/openrouter-sync.ts",
     "sync:openrouter:commit": "tsx lib/sync/openrouter-sync.ts --commit",
     "sync:lmarena": "tsx lib/sync/lmarena-sync.ts",
-    "sync:lmarena:commit": "tsx lib/sync/lmarena-sync.ts --commit"
+    "sync:lmarena:commit": "tsx lib/sync/lmarena-sync.ts --commit",
+    "validate:v4": "tsx scripts/validate-v4-scores.ts",
+    "test:v4": "tsx lib/optimizer/v4/__tests__/scoring-engine-v4.test.ts && tsx lib/optimizer/__tests__/selector-v4.test.ts && tsx lib/optimizer/__tests__/fallback-v3.test.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
     "@google/genai": "^1.29.0",
-    "@prisma/client": "^6.6.0",
+    "@prisma/client": "6.6.0",
     "@types/uuid": "^10.0.0",
     "@xenova/transformers": "^2.17.2",
     "clsx": "^2.1.1",
@@ -39,7 +41,7 @@
     "@types/node": "^22.14.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
-    "prisma": "^6.6.0",
+    "prisma": "6.6.0",
     "tailwindcss": "^4.1.14",
     "tsx": "^4.21.0",
     "typescript": "~5.8.2"

@@ -301,6 +301,51 @@ const translations = {
     rosterTooltip: { es: "Ver todos los modelos de esta fase", en: "View all models for this phase" },
     fallbacks: { es: "Fallbacks", en: "Fallbacks" },
     noFallbacks: { es: "— Sin fallbacks disponibles —", en: "— No fallbacks available —" },
+    // Orchestrator Panel (DataMatrix)
+    orchestratorLabel: { es: "P-Orchestrator", en: "P-Orchestrator" },
+    orchestratorTitle: { es: "ORQUESTADOR SDD", en: "SDD ORCHESTRATOR" },
+    orchestratorDesc: {
+      es: "Panel de control central para la orquestación del equipo SDD",
+      en: "Central control panel for SDD team orchestration",
+    },
+    // PhaseCard
+    categoryBadge: { es: "Categorizado por IA", en: "Categorized by AI" },
+    confidenceLabel: { es: "Confianza", en: "Confidence" },
+    // ViewModeSelector
+    viewGrid: { es: "Grilla", en: "Grid" },
+    viewList: { es: "Lista", en: "List" },
+    viewTable: { es: "Tabla", en: "Table" },
+    viewCompact: { es: "Compacto", en: "Compact" },
+    // TerminalUI
+    scoringReasoningTitle: { es: "Razonamiento de Scoring", en: "Scoring Reasoning" },
+    phasesLabel: { es: "fases", en: "phases" },
+    terminalFinalized: { es: "FINALIZADO, RESULTADOS MÁS ABAJO", en: "DONE, RESULTS BELOW" },
+    // OptimizerPage — V2 vs V3 section
+    v2v3Title: { es: "Comparación Motor V2 vs V3", en: "V2 vs V3 Engine Comparison" },
+    v2v3Subtitle: { es: "Diff de scoring lado a lado — LM Arena vs OIM Matrix", en: "Side-by-side scoring diff — LM Arena vs OIM Matrix" },
+    hideMatrix: { es: "Ocultar Matriz", en: "Hide Matrix" },
+    showMatrix: { es: "Mostrar Matriz", en: "Show Matrix" },
+    v3HintText: { es: "Ejecutá una optimización con estrategia V3 para poblar datos V3 para comparar.", en: "Run an optimization with V3 strategy to populate V3 data for comparison." },
+    scoringEngineLabel: { es: "Motor de Scoring", en: "Scoring Engine" },
+    // Scoring strategy labels
+    // "env" is the default: reads SCORING_VERSION from .env (feature-flag driven).
+    // "auto" keys kept for backward compatibility with any cached references.
+    strategyEnv: { es: "Auto (.env)", en: "Auto (.env)" },
+    strategyEnvFallback: { es: "Auto (.env — resuelto por SCORING_VERSION)", en: "Auto (.env — resolved via SCORING_VERSION)" },
+    strategyAuto: { es: "Auto (V3 → V2)", en: "Auto (V3 → V2)" },
+    strategyAutoFallback: { es: "Auto (V3 → V2 fallback)", en: "Auto (V3 → V2 fallback)" },
+    lastEngineLabel: { es: "último:", en: "last:" },
+    // OIM section headings
+    sddOrchestratorTitle: { es: "SDD ORCHESTRATOR", en: "SDD ORCHESTRATOR" },
+    oimLogTitle: { es: "OIM ORCHESTRATOR LOG", en: "OIM ORCHESTRATOR LOG" },
+    // DataMatrix — orchestrator primary model detail
+    viewModelDetails: { es: "Ver detalles del modelo", en: "View model details" },
+    // PhaseCard — roster label text
+    rosterLabel: { es: "roster", en: "roster" },
+    // DataMatrix copy/download aria-labels
+    copyModelList: { es: "Copiar lista de modelos", en: "Copy model list" },
+    downloadProfile: { es: "Descargar perfil JSON", en: "Download JSON profile" },
+    refreshLabel: { es: "Refrescar", en: "Refresh" },
     // PhaseDetailModal
     phaseDetail: { es: "PHASE DETAIL", en: "PHASE DETAIL" },
     assignedModel: { es: "Modelo Asignado (Click Origin)", en: "Assigned Model (Click Origin)" },

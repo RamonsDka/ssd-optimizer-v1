@@ -14,9 +14,18 @@ import { readAdvancedOptions } from "@/components/optimizer/AdvancedOptions";
 import type { TeamRecommendation } from "@/types";
 
 interface InputModuleProps {
-  onResult: (result: TeamRecommendation) => void;
+  onResult: (result: TeamRecommendation, meta?: { scoringVersion?: string }) => void;
   onError: (msg: string) => void;
+  /** Optional callback fired the moment the user submits, before fetch completes. */
+  onLoadingStart?: () => void;
   initialValue?: string;
+  /**
+   * Scoring strategy to request from /api/optimize.
+   * Defaults to "env" so the SCORING_VERSION feature flag in .env governs
+   * the backend engine selection. Use "v2"/"v3" only for explicit A/B overrides.
+   * "auto" is accepted for backward compatibility but "env" is preferred.
+   */
+  scoringVersion?: "v2" | "v3" | "auto" | "env";
 }
 
 // ─── Detect model count heuristic ─────────────────────────────────────────────
@@ -27,7 +36,16 @@ function countModels(text: string): number {
   return new Set(lines.map((l) => l.toLowerCase())).size;
 }
 
-export default function InputModule({ onResult, onError, initialValue = "" }: InputModuleProps) {
+export default function InputModule({
+  onResult,
+  onError,
+  onLoadingStart,
+  initialValue = "",
+  // Default is "env": defers engine selection to SCORING_VERSION in .env.
+  // This ensures the feature flag controls production behavior when the user
+  // has not explicitly selected a version override in the UI.
+  scoringVersion = "env",
+}: InputModuleProps) {
   const [value, setValue] = useState(initialValue);
   const [loading, setLoading] = useState(false);
   const [focused, setFocused] = useState(false);
@@ -39,6 +57,7 @@ export default function InputModule({ onResult, onError, initialValue = "" }: In
     if (!value.trim() || loading) return;
 
     setLoading(true);
+    onLoadingStart?.();
     try {
       const res = await fetch("/api/optimize", {
         method: "POST",
@@ -47,6 +66,7 @@ export default function InputModule({ onResult, onError, initialValue = "" }: In
           modelList: value,
           customPhases: listCustomPhases(),
           advancedOptions: readAdvancedOptions() ?? undefined,
+          scoringVersion,
         }),
       });
 
@@ -66,14 +86,14 @@ export default function InputModule({ onResult, onError, initialValue = "" }: In
 
       const result = json.data as TeamRecommendation;
       result.jobId = json.jobId;
-      onResult(result);
+      onResult(result, { scoringVersion: json.scoringVersion ?? scoringVersion });
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Error de red desconocido";
       onError(msg);
     } finally {
       setLoading(false);
     }
-  }, [value, loading, onResult, onError]);
+  }, [value, loading, onResult, onError, onLoadingStart, scoringVersion]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     // Ctrl+Enter or Cmd+Enter submits

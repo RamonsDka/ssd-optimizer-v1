@@ -39,7 +39,7 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
 # Generate Prisma client (must happen before next build)
-RUN npx prisma generate
+RUN npm install prisma@6.6.0 && npx prisma generate
 
 # Build Next.js in standalone mode
 ENV NODE_ENV=production
@@ -104,4 +104,5 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
   CMD wget -qO- http://127.0.0.1:3000/api/settings || exit 1
 
-CMD ["node", "server.js"]
+# Run migrations before starting the server
+CMD ["sh", "-c", "npx prisma@6.6.0 migrate deploy && node server.js"]

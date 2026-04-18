@@ -2,6 +2,8 @@
 
 // ─── DataMatrix ────────────────────────────────────────────────────────────────
 // 2×5 grid of PhaseCards (10 SDD phases). Orchestrates display for active profile.
+// The SDD Orchestrator panel is driven dynamically from the 'sdd-onboard' phase
+// in the active profile — no more hardcoded static model data.
 
 import { useState } from "react";
 import { RefreshCw, Download, Copy, Check } from "lucide-react";
@@ -17,57 +19,6 @@ import { useCopyFeedback } from "@/lib/hooks/useCopyFeedback";
 import type { PhaseAssignment, Tier, ModelRecord } from "@/types";
 import { getPhaseLabel } from "@/types";
 import type { ViewMode } from "@/components/shared/ViewModeSelector";
-
-// ─── Static Orchestrator Model Data ───────────────────────────────────────────
-
-const ORCHESTRATOR_PRIMARY: ModelRecord = {
-  id: "anthropic/claude-opus-4-5",
-  name: "Claude Opus 4.5",
-  providerId: "anthropic",
-  tier: "PREMIUM",
-  contextWindow: 200000,
-  costPer1M: 15.00,
-  strengths: ["reasoning", "architecture", "analysis", "context", "structured-output"],
-  discoveredByAI: false,
-};
-
-const ORCHESTRATOR_FALLBACKS: ModelRecord[] = [
-  {
-    id: "anthropic/claude-sonnet-4-5",
-    name: "Claude Sonnet 4.5",
-    providerId: "anthropic",
-    tier: "BALANCED",
-    contextWindow: 200000,
-    costPer1M: 3.00,
-    strengths: ["reasoning", "coding", "context", "structured-output"],
-    discoveredByAI: false,
-  },
-  {
-    id: "anthropic/claude-3-7-sonnet",
-    name: "Claude 3.7 Sonnet",
-    providerId: "anthropic",
-    tier: "BALANCED",
-    contextWindow: 200000,
-    costPer1M: 3.00,
-    strengths: ["reasoning", "analysis", "coding"],
-    discoveredByAI: false,
-  },
-  {
-    id: "openai/gpt-4o",
-    name: "GPT 4o",
-    providerId: "openai",
-    tier: "BALANCED",
-    contextWindow: 128000,
-    costPer1M: 5.00,
-    strengths: ["reasoning", "multimodal", "structured-output"],
-    discoveredByAI: false,
-  },
-];
-
-const ORCHESTRATOR_REASON =
-  "Claude Opus 4.5 es el modelo más capaz para tareas de orquestación — maneja coordinación multi-fase compleja, planificación de largo alcance y decisiones arquitectónicas a lo largo de todo el ciclo SDD. Su razonamiento excepcional y ventana de contexto de 200k lo hacen ideal para mantener coherencia entre todas las fases del equipo.";
-
-const ORCHESTRATOR_SCORE = 1.0;
 
 interface DataMatrixProps {
   phases: PhaseAssignment[];
@@ -95,6 +46,18 @@ export default function DataMatrix({
     ...phase,
     phaseLabel: getPhaseLabel(phase.phase, lang)
   }));
+
+  // ── Dynamic Orchestrator data ─────────────────────────────────────────────
+  // Drive the SDD Orchestrator panel from the 'sdd-onboard' PhaseAssignment
+  // in the active profile. Falls back to null when profiles aren't loaded yet.
+  const orchestratorAssignment = localizedPhases.find(
+    (p) => p.phase === "sdd-onboard"
+  ) ?? null;
+
+  const orchestratorPrimary = orchestratorAssignment?.primary ?? null;
+  const orchestratorFallbacks = orchestratorAssignment?.fallbacks ?? [];
+  const orchestratorScore = orchestratorAssignment?.score ?? null;
+  const orchestratorReason = orchestratorAssignment?.reason ?? null;
 
   // Build downloadable JSON
   const handleDownload = () => {
@@ -135,7 +98,7 @@ export default function DataMatrix({
               onClick={onRefresh}
               disabled={loading}
               className="bg-surface-container-high p-2 text-on-surface hover:bg-surface-bright transition-colors disabled:opacity-40"
-              aria-label="Refrescar"
+              aria-label={t("optimizer", "refreshLabel")}
             >
               <motion.span
                 animate={loading ? { rotate: 360 } : { rotate: 0 }}
@@ -152,8 +115,8 @@ export default function DataMatrix({
             onClick={handleCopy}
             disabled={loading || localizedPhases.length === 0}
             className="bg-surface-container-high p-2 text-on-surface hover:bg-surface-bright transition-colors disabled:opacity-40 relative overflow-hidden"
-            aria-label="Copiar lista de modelos"
-            title="Copiar lista de modelos"
+            aria-label={t("optimizer", "copyModelList")}
+            title={t("optimizer", "copyModelList")}
           >
             <AnimatePresence mode="wait" initial={false}>
               {copied ? (
@@ -186,71 +149,84 @@ export default function DataMatrix({
             onClick={handleDownload}
             disabled={loading || localizedPhases.length === 0}
             className="bg-surface-container-high p-2 text-on-surface hover:bg-surface-bright transition-colors disabled:opacity-40"
-            aria-label="Descargar perfil JSON"
+            aria-label={t("optimizer", "downloadProfile")}
           >
             <Download size={16} />
           </button>
         </div>
       </div>
 
-      {/* SDD Orchestrator — full model card with primary + fallbacks */}
+      {/* SDD Orchestrator — driven by the sdd-onboard phase assignment */}
       <div className="bg-surface-container-low mb-4 border-l-2 border-primary group hover:bg-surface-container transition-colors">
         <div className="p-6 flex flex-col gap-5 sm:flex-row sm:items-start sm:gap-8">
 
           {/* Left: identity */}
           <div className="flex-1 min-w-0">
             <span className="text-[10px] font-mono text-primary uppercase tracking-widest opacity-70">
-              P-Orchestrator
+              {t("optimizer", "orchestratorLabel")}
             </span>
             <h3 className="font-label text-lg font-black uppercase text-on-surface mt-1 tracking-tight">
-              SDD ORCHESTRATOR
+              {t("optimizer", "orchestratorTitle")}
             </h3>
             <p className="text-on-surface-variant text-xs mt-2 leading-relaxed max-w-xs">
-              {lang === "es"
-                ? "Panel de control central para la orquestación del equipo SDD"
-                : "Central control panel for SDD team orchestration"}
+              {t("optimizer", "orchestratorDesc")}
             </p>
           </div>
 
-          {/* Center: primary model */}
+          {/* Center: primary model (from sdd-onboard phase) */}
           <div className="flex-1 min-w-0">
-            <button
-              onClick={() => setSelectedOrchestratorModel(ORCHESTRATOR_PRIMARY)}
-              className="text-left w-full group/primary"
-              title="Ver detalles del modelo"
-            >
-              <div className="font-mono text-lg font-black text-on-surface group-hover/primary:text-secondary transition-colors break-words leading-tight hyphens-auto">
-                {ORCHESTRATOR_PRIMARY.name}
+            {orchestratorPrimary ? (
+              <>
+                <button
+                  onClick={() => setSelectedOrchestratorModel(orchestratorPrimary)}
+                  className="text-left w-full group/primary"
+                  title={t("optimizer", "viewModelDetails")}
+                >
+                  <div className="font-mono text-lg font-black text-on-surface group-hover/primary:text-secondary transition-colors break-words leading-tight hyphens-auto">
+                    {orchestratorPrimary.name}
+                  </div>
+                  <div className="font-mono text-[9px] text-on-surface-variant/50 mt-0.5">
+                    {orchestratorPrimary.providerId}
+                  </div>
+                </button>
+                {/* Spec chips */}
+                <div className="flex flex-wrap gap-1 mt-3">
+                  <span className="text-[9px] bg-surface-container-highest px-1.5 py-0.5 font-mono text-on-surface-variant">
+                    {(orchestratorPrimary.contextWindow / 1000).toFixed(0)}k
+                  </span>
+                  <span className="text-[9px] bg-surface-container-highest px-1.5 py-0.5 font-mono text-on-surface-variant">
+                    ${orchestratorPrimary.costPer1M.toFixed(2)}
+                  </span>
+                  {orchestratorScore !== null && (
+                    <span className="text-[9px] bg-surface-container-highest px-1.5 py-0.5 font-mono text-secondary">
+                      {Math.round(orchestratorScore * 100)}%
+                    </span>
+                  )}
+                </div>
+              </>
+            ) : (
+              <div className="text-[10px] font-mono text-on-surface-variant/40 animate-pulse">
+                —
               </div>
-              <div className="font-mono text-[9px] text-on-surface-variant/50 mt-0.5">
-                {ORCHESTRATOR_PRIMARY.providerId}
-              </div>
-            </button>
-            {/* Spec chips */}
-            <div className="flex flex-wrap gap-1 mt-3">
-              <span className="text-[9px] bg-surface-container-highest px-1.5 py-0.5 font-mono text-on-surface-variant">
-                {(ORCHESTRATOR_PRIMARY.contextWindow / 1000).toFixed(0)}k
-              </span>
-              <span className="text-[9px] bg-surface-container-highest px-1.5 py-0.5 font-mono text-on-surface-variant">
-                ${ORCHESTRATOR_PRIMARY.costPer1M.toFixed(2)}
-              </span>
-              <span className="text-[9px] bg-surface-container-highest px-1.5 py-0.5 font-mono text-secondary">
-                {Math.round(ORCHESTRATOR_SCORE * 100)}%
-              </span>
-            </div>
+            )}
           </div>
 
-          {/* Right: fallbacks */}
+          {/* Right: fallbacks (from sdd-onboard phase) */}
           <div className="flex-1 min-w-0">
             <div className="flex items-center justify-between mb-3">
               <span className="text-[9px] font-mono uppercase text-outline-variant">
-                {t("optimizer", "fallbacks")} ({ORCHESTRATOR_FALLBACKS.length})
+                {t("optimizer", "fallbacks")} ({orchestratorFallbacks.length})
               </span>
               <div className="w-2 h-2 bg-primary opacity-20 group-hover:opacity-100 transition-opacity" />
             </div>
             <div className="space-y-1.5">
-              {ORCHESTRATOR_FALLBACKS.map((fb, idx) => (
-            <button
+              {orchestratorFallbacks.length === 0 && (
+                <div className="text-[9px] font-mono text-on-surface-variant/40">
+                  {t("optimizer", "noFallbacks")}
+                </div>
+              )}
+              {orchestratorFallbacks.map((fb, idx) => (
+                <button
                   key={fb.id}
                   onClick={() => setSelectedOrchestratorModel(fb)}
                   className="w-full flex items-center justify-between bg-surface-container-highest px-3 py-1.5 hover:bg-surface-container-high transition-colors text-left"
@@ -277,9 +253,17 @@ export default function DataMatrix({
       {/* Orchestrator Model Detail Modal */}
       <ModelDetailModal
         model={selectedOrchestratorModel}
-        phase={null}
-        reason={selectedOrchestratorModel?.id === ORCHESTRATOR_PRIMARY.id ? ORCHESTRATOR_REASON : null}
-        score={selectedOrchestratorModel?.id === ORCHESTRATOR_PRIMARY.id ? ORCHESTRATOR_SCORE : null}
+        phase="sdd-onboard"
+        reason={
+          selectedOrchestratorModel?.id === orchestratorPrimary?.id
+            ? orchestratorReason
+            : null
+        }
+        score={
+          selectedOrchestratorModel?.id === orchestratorPrimary?.id
+            ? orchestratorScore
+            : null
+        }
         onClose={() => setSelectedOrchestratorModel(null)}
       />
 

@@ -28,6 +28,7 @@ import {
 import { cn } from "@/lib/utils/cn";
 import { APP_VERSION, APP_NAME } from "@/lib/constants/version";
 import { getOrCreateSessionId } from "@/lib/session/session-manager";
+import { useLanguage } from "@/lib/i18n/LanguageProvider";
 
 import { LanguageRegionSection } from "@/components/settings/sections/LanguageRegionSection";
 import { AppearanceSection } from "@/components/settings/sections/AppearanceSection";
@@ -129,6 +130,8 @@ interface RecommendationProps {
 }
 
 function RecommendationItem({ icon, title, description, priority }: RecommendationProps) {
+  const { t } = useLanguage();
+
   const priorityStyle = {
     high: "text-red-400 bg-red-400/10 border border-red-400/20",
     medium: "text-yellow-400 bg-yellow-400/10 border border-yellow-400/20",
@@ -136,9 +139,9 @@ function RecommendationItem({ icon, title, description, priority }: Recommendati
   }[priority];
 
   const priorityLabel = {
-    high: "Alta",
-    medium: "Media",
-    low: "Baja",
+    high: t("settings", "priorityHigh"),
+    medium: t("settings", "priorityMedium"),
+    low: t("settings", "priorityLow"),
   }[priority];
 
   return (
@@ -174,6 +177,8 @@ interface ActionState {
 type SystemAction = "clear-local-persistence" | "trigger-catalog-sync";
 
 export default function SettingsPage() {
+  const { t } = useLanguage();
+
   // ── useSettings replaces inline fetch for stats + flags ─────────────────────
   const {
     data: settingsData,
@@ -280,10 +285,10 @@ export default function SettingsPage() {
         <div className="flex items-end justify-between">
           <div className="border-l-4 border-primary pl-6">
             <h1 className="text-4xl font-black uppercase tracking-tighter text-on-surface">
-              SYS SETTINGS
+              {t("settings", "title")}
             </h1>
             <p className="font-mono text-xs text-primary/60 uppercase tracking-widest mt-2">
-              System Configuration // Diagnostic &amp; Admin Panel
+              {t("settings", "subtitle")}
             </p>
           </div>
           <button
@@ -297,7 +302,7 @@ export default function SettingsPage() {
             )}
           >
             <RefreshCw size={12} className={loading ? "animate-spin" : ""} />
-            Refresh
+            {t("settings", "refresh")}
           </button>
         </div>
 
@@ -312,7 +317,7 @@ export default function SettingsPage() {
         {loading && (
           <div className="flex items-center justify-center py-20 gap-3 text-on-surface-variant font-mono text-xs uppercase tracking-widest">
             <Loader2 size={14} className="animate-spin text-primary" />
-            Cargando configuración...
+            {t("settings", "loading")}
           </div>
         )}
 
@@ -322,7 +327,7 @@ export default function SettingsPage() {
             {/* ENV banner */}
             <div className="flex items-center gap-3 border border-outline-variant/20 bg-surface-container-low px-6 py-3">
               <span className="font-mono text-[10px] text-on-surface-variant uppercase tracking-widest">
-                Environment:
+                {t("settings", "environment")}:
               </span>
               <span
                 className={cn(
@@ -368,14 +373,14 @@ export default function SettingsPage() {
               <div className="flex items-center gap-3 mb-4">
                 <div className="w-1 h-6 bg-secondary" />
                 <h2 className="font-label text-xs uppercase tracking-widest text-on-surface-variant">
-                  Build Information
+                  {t("settings", "buildInfo")}
                 </h2>
               </div>
               <div className="border border-outline-variant/20 bg-surface-container-low px-6 py-4">
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <div>
                     <span className="font-mono text-[10px] text-on-surface-variant/50 uppercase tracking-widest block mb-1">
-                      Application
+                      {t("settings", "application")}
                     </span>
                     <span className="font-mono text-sm text-on-surface font-bold uppercase tracking-wider">
                       {APP_NAME}
@@ -383,7 +388,7 @@ export default function SettingsPage() {
                   </div>
                   <div>
                     <span className="font-mono text-[10px] text-on-surface-variant/50 uppercase tracking-widest block mb-1">
-                      Version
+                      {t("settings", "version")}
                     </span>
                     <span className="font-mono text-sm text-primary font-bold tracking-wider">
                       v{APP_VERSION}
@@ -391,7 +396,7 @@ export default function SettingsPage() {
                   </div>
                   <div>
                     <span className="font-mono text-[10px] text-on-surface-variant/50 uppercase tracking-widest block mb-1">
-                      Stack
+                      {t("settings", "stack")}
                     </span>
                     <span className="font-mono text-sm text-on-surface tracking-wider">
                       Next.js 15 + Prisma + Tailwind
@@ -406,7 +411,7 @@ export default function SettingsPage() {
               <div className="flex items-center gap-3 mb-4">
                 <div className="w-1 h-6 bg-primary" />
                 <h2 className="font-label text-xs uppercase tracking-widest text-on-surface-variant">
-                  Database Stats
+                  {t("settings", "dbStats")}
                 </h2>
               </div>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -439,7 +444,7 @@ export default function SettingsPage() {
               <div className="flex items-center gap-3 mb-4">
                 <div className="w-1 h-6 bg-secondary" />
                 <h2 className="font-label text-xs uppercase tracking-widest text-on-surface-variant">
-                  Feature Flags
+                  {t("settings", "featureFlags")}
                 </h2>
               </div>
               <div className="border border-outline-variant/20 bg-surface-container-low px-6">
@@ -467,7 +472,7 @@ export default function SettingsPage() {
               <div className="flex items-center gap-3 mb-4">
                 <div className="w-1 h-6 bg-tertiary" />
                 <h2 className="font-label text-xs uppercase tracking-widest text-on-surface-variant">
-                  System Actions
+                  {t("settings", "systemActions")}
                 </h2>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -477,10 +482,10 @@ export default function SettingsPage() {
                     <span className="text-primary shrink-0"><Eraser size={16} /></span>
                     <div>
                       <p className="font-mono text-xs font-bold uppercase tracking-widest text-on-surface">
-                        Clear Local Persistence
+                        {t("settings", "clearPersistence")}
                       </p>
                       <p className="font-mono text-[10px] text-on-surface-variant/60 mt-0.5">
-                        Elimina todas las claves de localStorage (resultados guardados, preferencias de UI).
+                        {t("settings", "clearPersistenceDesc")}
                       </p>
                     </div>
                   </div>
@@ -511,10 +516,10 @@ export default function SettingsPage() {
                     {sysActionStates["clear-local-persistence"].status === "loading" ? (
                       <span className="flex items-center gap-2">
                         <Loader2 size={10} className="animate-spin" />
-                        Limpiando...
+                        {t("settings", "clearing")}
                       </span>
                     ) : (
-                      "Clear Persistence"
+                      t("settings", "clearPersistence")
                     )}
                   </button>
                 </div>
@@ -525,10 +530,10 @@ export default function SettingsPage() {
                     <span className="text-primary shrink-0"><CloudUpload size={16} /></span>
                     <div>
                       <p className="font-mono text-xs font-bold uppercase tracking-widest text-on-surface">
-                        Trigger Catalog Sync
+                        {t("settings", "triggerSync")}
                       </p>
                       <p className="font-mono text-[10px] text-on-surface-variant/60 mt-0.5">
-                        Sincroniza el catálogo de modelos desde OpenRouter vía <span className="text-primary">/api/sync</span>.
+                        {t("settings", "triggerSyncDesc")}
                       </p>
                     </div>
                   </div>
@@ -562,67 +567,70 @@ export default function SettingsPage() {
                     {sysActionStates["trigger-catalog-sync"].status === "loading" ? (
                       <span className="flex items-center gap-2">
                         <Loader2 size={10} className="animate-spin" />
-                        Sincronizando...
+                        {t("settings", "syncing")}
                       </span>
                     ) : (
-                      "Trigger Sync"
+                      t("settings", "triggerSync")
                     )}
                   </button>
                 </div>
               </div>
               {!flags.openrouterConfigured && (
                 <p className="font-mono text-[9px] text-on-surface-variant/40 mt-2 pl-4">
-                  ⚠ OPENROUTER_API_KEY no configurada — Catalog Sync deshabilitado.
+                  {t("settings", "openrouterNotConfigured")}
                 </p>
               )}
             </section>
 
-            {/* ── System Maintenance (4.2.6) ───────────────────────────────── */}
-            <SystemMaintenanceSection onSyncComplete={refresh} />
+            {/* ── System Maintenance (4.2.6) — Admin-only section ──────────── */}
+            <SystemMaintenanceSection
+              onSyncComplete={refresh}
+              isAdmin={flags.nodeEnv === "development" || process.env.NEXT_PUBLIC_ADMIN_MODE === "true"}
+            />
 
             {/* ── Deployment Recommendations ───────────────────────────────── */}
             <section>
               <div className="flex items-center gap-3 mb-4">
                 <div className="w-1 h-6 bg-yellow-500" />
                 <h2 className="font-label text-xs uppercase tracking-widest text-on-surface-variant">
-                  Deployment Recommendations
+                  {t("settings", "deploymentRecs")}
                 </h2>
               </div>
               <div className="border border-outline-variant/20 bg-surface-container-low px-6">
                 <RecommendationItem
                   icon={<Lock size={14} />}
-                  title="Agregar Auth Guard al Admin Panel"
-                  description="Las acciones de mantenimiento no tienen control de acceso. Implementar middleware JWT o NextAuth antes de un deploy en producción."
+                  title={t("settings", "recAuth")}
+                  description={t("settings", "recAuthDesc")}
                   priority="high"
                 />
                 <RecommendationItem
                   icon={<Server size={14} />}
-                  title="Variables de entorno en plataforma de CI/CD"
-                  description="Mover DATABASE_URL, GEMINI_API_KEY y OPENROUTER_API_KEY a secretos de Vercel/Railway. Nunca commitear el archivo .env."
+                  title={t("settings", "recEnvVars")}
+                  description={t("settings", "recEnvVarsDesc")}
                   priority="high"
                 />
                 <RecommendationItem
                   icon={<GitBranch size={14} />}
-                  title="Implementar Migrations automáticas en CI"
-                  description="Ejecutar prisma migrate deploy como parte del pipeline de build para garantizar que el esquema esté actualizado en cada deploy."
+                  title={t("settings", "recMigrations")}
+                  description={t("settings", "recMigrationsDesc")}
                   priority="medium"
                 />
                 <RecommendationItem
                   icon={<ShieldAlert size={14} />}
-                  title="Rate Limiting en /api/optimize"
-                  description="El endpoint de optimización llama a Gemini AI. Sin rate limit, un usuario puede generar costos elevados. Usar Upstash Redis + @upstash/ratelimit."
+                  title={t("settings", "recRateLimit")}
+                  description={t("settings", "recRateLimitDesc")}
                   priority="medium"
                 />
                 <RecommendationItem
                   icon={<Monitor size={14} />}
-                  title="Logging estructurado con Pino o Winston"
-                  description="Reemplazar console.log/error con un logger estructurado. Facilita debug en producción y permite integración con Datadog o Grafana Loki."
+                  title={t("settings", "recLogging")}
+                  description={t("settings", "recLoggingDesc")}
                   priority="low"
                 />
                 <RecommendationItem
                   icon={<Lightbulb size={14} />}
-                  title="Caché de resultados con Redis"
-                  description="El mismo input al optimizer siempre produce el mismo resultado. Cachear la respuesta de Gemini por 1h reduciría latencia y costos de API."
+                  title={t("settings", "recCache")}
+                  description={t("settings", "recCacheDesc")}
                   priority="low"
                 />
               </div>
@@ -633,7 +641,7 @@ export default function SettingsPage() {
               <div className="flex items-center gap-3 mb-4">
                 <div className="w-1 h-6 bg-outline-variant" />
                 <h2 className="font-label text-xs uppercase tracking-widest text-on-surface-variant">
-                  Required Environment Variables
+                  {t("settings", "envVars")}
                 </h2>
               </div>
               <div className="bg-surface-container border border-outline-variant/20 p-6 font-mono text-xs space-y-2">
@@ -646,7 +654,7 @@ export default function SettingsPage() {
                   <div key={key} className="flex items-baseline gap-4">
                     <span className="text-primary w-56 shrink-0">{key}</span>
                     <span className="text-on-surface-variant/40 text-[10px] uppercase tracking-widest w-20 shrink-0">
-                      {required ? "[required]" : "[optional]"}
+                      {required ? t("settings", "required") : t("settings", "optional")}
                     </span>
                     <span className="text-on-surface-variant">{desc}</span>
                   </div>

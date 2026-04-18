@@ -31,11 +31,14 @@ model Model {
   costPer1M      Float    @default(0)
   strengths      String[]
   discoveredByAI Boolean  @default(false)
+  isThinkingModel Boolean @default(false) // True for extended thinking / reasoning models
   lastSyncedAt   DateTime? // For LM Arena sync tracking
   updatedAt      DateTime @updatedAt
 
-  selections  ModelSelection[]
-  arenaScores LMArenaScore[]
+  selections      ModelSelection[]
+  arenaScores     LMArenaScore[]
+  unifiedScores   UnifiedModelScores[]
+  capabilities    ModelCapabilities?   // V4 Engine: 17-dimensional capability profile
 
   @@map("models")
 }
@@ -71,6 +74,36 @@ model LMArenaScore {
   @@map("lm_arena_scores")
 }
 
+// ─── Unified Model Scores (OIM — multi-dimensional) ──────────────────────────
+
+model UnifiedModelScores {
+  id                 String      @id @default(cuid())
+  modelId            String
+  model              Model       @relation(fields: [modelId], references: [id], onDelete: Cascade)
+
+  // Source of truth for this snapshot
+  source             ScoreSource
+  // Date of the benchmark snapshot (used as historical anchor)
+  snapshotDate       DateTime
+
+  // Multi-dimensional scores (0.0 – 1.0 normalised)
+  codingScore        Float?      // Coding / programming capability
+  thinkingScore      Float?      // Reasoning / thinking capability
+  designScore        Float?      // Design / creativity capability
+  instructionScore   Float?      // Instruction following capability
+
+  // Context efficiency (how well the model uses its context window)
+  contextEfficiency  Float?
+
+  // Raw source payload for reprocessing / debugging
+  rawData            Json?
+
+  syncedAt           DateTime    @default(now())
+
+  @@unique([modelId, source, snapshotDate])
+  @@map("unified_model_scores")
+}
+
 model SyncLog {
   id           String   @id @default(cuid())
   type         String   // "LMARENA" | "OPENROUTER"
@@ -92,6 +125,7 @@ model OptimizationJob {
   userInput       String    @db.Text
   results         Json      // TeamRecommendation JSON
   advancedOptions Json?     // AdvancedOptions snapshot at submission time
+  scoringVersion  String    @default("v2") // "v2" | "v3" — which engine produced results
   status          JobStatus @default(PENDING)
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
@@ -132,7 +166,56 @@ model PhaseRecommendation {
   @@map("phase_recommendations")
 }
 
+// ─── Model Capabilities V4 (17-dimensional scoring) ──────────────────────────
+
+model ModelCapabilities {
+  id      String   @id @default(cuid())
+  modelId String   @unique
+  model   Model    @relation(fields: [modelId], references: [id], onDelete: Cascade)
+
+  // ── Grupo A: Inteligencia ──────────────────────────────────────────────────
+  a1_overall_intelligence  Float @default(5.0) // General intelligence benchmark (0.0-10.0)
+  a2_reasoning_depth       Float @default(5.0) // Deep causal / multi-step reasoning
+  a3_instruction_following Float @default(5.0) // Instruction adherence & format compliance
+  a4_hallucination_resistance Float @default(5.0) // Factual grounding / low hallucination rate
+
+  // ── Grupo B: Técnicas ──────────────────────────────────────────────────────
+  b1_coding_quality       Float @default(5.0) // Code correctness & best-practice adherence
+  b2_coding_multilang     Float @default(5.0) // Multi-language coding breadth
+  b3_context_window_score Float @default(5.0) // Nominal context window size (normalised)
+  b4_context_effective_score Float @default(5.0) // Effective context usage (Lost-in-Middle score)
+  b5_tool_calling_accuracy   Float @default(5.0) // Tool/function-calling reliability
+  b6_agentic_reliability     Float @default(5.0) // Autonomous multi-step task completion
+
+  // ── Grupo C: Especializadas ────────────────────────────────────────────────
+  c1_visual_understanding   Float @default(5.0) // Multimodal / image understanding
+  c2_format_adherence       Float @default(5.0) // Structured output (JSON/YAML/Markdown)
+  c3_long_context_coherence Float @default(5.0) // Coherence over very long contexts
+  c4_architecture_awareness Float @default(5.0) // Software architecture & design understanding
+
+  // ── Grupo D: Operacionales ─────────────────────────────────────────────────
+  d1_speed_score        Float @default(5.0) // Tokens-per-second / latency score
+  d2_cost_score         Float @default(5.0) // Cost efficiency (inverse cost normalised)
+  d3_availability_score Float @default(5.0) // Uptime / rate-limit reliability
+
+  // ── Metadata ───────────────────────────────────────────────────────────────
+  dataQualityScore Float    @default(0.5) // Confidence in the data (0.0-1.0)
+  source           String   @default("manual") // "manual" | "benchmark" | "inferred"
+  lastUpdated      DateTime @default(now()) @updatedAt
+
+  // ── Indexes ────────────────────────────────────────────────────────────────
+  @@index([modelId])
+  @@index([modelId, lastUpdated])
+  @@map("model_capabilities")
+}
+
 // ─── Enums ────────────────────────────────────────────────────────────────────
+
+enum ScoreSource {
+  ARENA               // LM Arena leaderboard data
+  ARTIFICIAL_ANALYSIS // ArtificialAnalysis.ai benchmarks
+  WEB_INFERRED        // AI-inferred from web / embedding heuristics
+}
 
 enum Tier {
   PREMIUM

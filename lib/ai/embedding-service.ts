@@ -2,6 +2,10 @@
 // Runs ONLY in Node.js (Next.js API routes / server-side).
 // Uses @xenova/transformers with in-memory model cache.
 // The pipeline is loaded once and reused across calls.
+//
+// When the ONNX model is unavailable (production, missing native bindings),
+// `categorizeModel()` automatically falls back to the LLM-based categorizer
+// in `lib/ai/llm-categorizer.ts` which uses the Gemini API.
 
 // @xenova/transformers ships as ESM-only. The pipeline function returns a
 // FeatureExtractionPipeline when called with "feature-extraction".
@@ -41,7 +45,26 @@ const EMBEDDING_DIM = 768; // all-mpnet-base-v2 output dimension
  * only once even across many requests.
  */
 let _pipeline: FeatureExtractionPipeline | null = null;
-let _loadingPromise: Promise<FeatureExtractionPipeline> | null = null;
+let _loadingPromise: Promise<FeatureExtractionPipeline | null> | null = null;
+
+/**
+ * Set to `true` when ONNX/OrtRuntime initialization fails.
+ * Once failed, subsequent calls to `loadModel()` return `null` immediately
+ * instead of retrying and crashing the process.
+ */
+let _initFailed = process.env.NODE_ENV === 'production';
+
+/**
+ * Returns `true` when the embedding model loaded successfully and is ready
+ * for inference.  Returns `false` when ONNX initialization failed or when
+ * the model has not yet been loaded (cold start).
+ *
+ * Call this before `embed()` / `embedBatch()` / `categorizeModel()` when you
+ * want to degrade gracefully instead of propagating errors.
+ */
+export function isEmbeddingServiceAvailable(): boolean {
+  return _pipeline !== null && !_initFailed;
+}
 
 // ─── loadModel ──────────────────────────────────────────────────────────────
 
@@ -49,12 +72,16 @@ let _loadingPromise: Promise<FeatureExtractionPipeline> | null = null;
  * Loads the all-mpnet-base-v2 model and returns the feature-extraction
  * pipeline.  Subsequent calls return the cached instance without re-loading.
  *
+ * Returns `null` (and logs the error) when ONNX/OrtRuntime initialization
+ * fails so that callers can degrade gracefully instead of crashing the process.
+ *
  * Must run in a Node.js environment (Next.js API route, server action, or
  * standalone script via tsx).  Will throw if called from a browser context.
  *
  * @throws {Error} When called outside a Node.js environment.
+ * @returns The feature-extraction pipeline, or `null` if ONNX init failed.
  */
-export async function loadModel(): Promise<FeatureExtractionPipeline> {
+export async function loadModel(): Promise<FeatureExtractionPipeline | null> {
   // Guard: this file must never execute in the browser.
   if (typeof window !== "undefined") {
     throw new Error(
@@ -67,52 +94,81 @@ export async function loadModel(): Promise<FeatureExtractionPipeline> {
     return _pipeline;
   }
 
+  // If a previous initialization attempt already failed, bail out immediately
+  // without retrying — the process is still running and we should not hammer
+  // OrtRuntime again (which could crash the process or exhaust memory).
+  if (_initFailed) {
+    return null;
+  }
+
   // Deduplicate concurrent calls: if a load is already in progress, all
   // callers await the same promise instead of launching parallel downloads.
   if (_loadingPromise !== null) {
     return _loadingPromise;
   }
 
-  _loadingPromise = (async (): Promise<FeatureExtractionPipeline> => {
-    // Dynamic import keeps @xenova/transformers out of the browser bundle.
-    // Next.js will tree-shake this when the module is only imported from
-    // server-only files.
-    const { pipeline, env } = await import("@xenova/transformers");
+  _loadingPromise = (async (): Promise<FeatureExtractionPipeline | null> => {
+    try {
+      // In production, we skip ONNX loading to avoid native module crashes
+      if (process.env.NODE_ENV === 'production') {
+        console.warn("[EmbeddingService] ONNX model loading is disabled in production.");
+        _initFailed = true;
+        return null;
+      }
+      
+      // Dynamic import keeps @xenova/transformers out of the browser bundle.
+      // Next.js will tree-shake this when the module is only imported from
+      // server-only files.
+      const { pipeline, env } = await import("@xenova/transformers");
 
-    // Configure transformers.js for a server-only Node.js environment.
-    // Disable the browser-specific WASM backend fallback so ONNX Runtime
-    // Node is used instead (faster on server).
-    env.useBrowserCache = false;
+      // Configure transformers.js for a server-only Node.js environment.
+      // Disable the browser-specific WASM backend fallback so ONNX Runtime
+      // Node is used instead (faster on server).
+      env.useBrowserCache = false;
 
-    // If MODEL_CACHE_DIR is set (injected by Docker at runtime), point
-    // transformers.js to the pre-downloaded model cache baked into the image.
-    // This avoids hitting HuggingFace Hub on every cold start and prevents
-    // network errors when the container has no outbound internet access.
-    const modelCacheDir = process.env.MODEL_CACHE_DIR;
-    if (modelCacheDir) {
-      env.cacheDir = modelCacheDir;
-      env.allowLocalModels = true;
-      env.localModelPath = modelCacheDir;
-    } else {
-      // Development / environments without a pre-baked cache: fetch from Hub.
-      env.allowLocalModels = false;
+      // If MODEL_CACHE_DIR is set (injected by Docker at runtime), point
+      // transformers.js to the pre-downloaded model cache baked into the image.
+      // This avoids hitting HuggingFace Hub on every cold start and prevents
+      // network errors when the container has no outbound internet access.
+      const modelCacheDir = process.env.MODEL_CACHE_DIR;
+      if (modelCacheDir) {
+        env.cacheDir = modelCacheDir;
+        env.allowLocalModels = true;
+        env.localModelPath = modelCacheDir;
+      } else {
+        // Development / environments without a pre-baked cache: fetch from Hub.
+        env.allowLocalModels = false;
+      }
+
+      const pipe = await pipeline("feature-extraction", MODEL_ID, {
+        // Use the quantized (int8) ONNX model — ~4× smaller, marginal quality
+        // loss on sentence similarity tasks.
+        quantized: true,
+      });
+
+      // Cast to our minimal interface — the actual object is a Callable class
+      // instance from transformers.js that is callable as a function.
+      _pipeline = pipe as unknown as FeatureExtractionPipeline;
+      return _pipeline;
+    } catch (err) {
+      // ONNX / OrtRuntime initialization failed (e.g. Ort::Exception, missing
+      // native binding, incompatible Node.js ABI).  Mark as failed so that
+      // subsequent calls return null immediately without retrying.
+      _initFailed = true;
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(
+        `[EmbeddingService] ONNX model initialization failed — embedding features will be disabled. Error: ${msg}`
+      );
+      return null;
     }
-
-    const pipe = await pipeline("feature-extraction", MODEL_ID, {
-      // Use the quantized (int8) ONNX model — ~4× smaller, marginal quality
-      // loss on sentence similarity tasks.
-      quantized: true,
-    });
-
-    // Cast to our minimal interface — the actual object is a Callable class
-    // instance from transformers.js that is callable as a function.
-    _pipeline = pipe as unknown as FeatureExtractionPipeline;
-    return _pipeline;
   })();
 
   try {
-    _pipeline = await _loadingPromise;
-    return _pipeline;
+    const result = await _loadingPromise;
+    if (result !== null) {
+      _pipeline = result;
+    }
+    return result;
   } finally {
     // Clear loading promise regardless of success/failure so retries work.
     _loadingPromise = null;
@@ -124,11 +180,23 @@ export async function loadModel(): Promise<FeatureExtractionPipeline> {
 /**
  * Encodes a single text string into a normalized embedding vector.
  *
+ * Returns `null` when the ONNX model failed to initialize.
+ * Callers MUST check for `null` before using the result.
+ *
  * @param text - Input text to embed.
- * @returns A `Float32Array` of length 768 (normalized L2).
+ * @returns A `Float32Array` of length 768 (normalized L2), or `null` if the
+ *          embedding service is unavailable.
  */
-export async function embed(text: string): Promise<Float32Array> {
+export async function embed(text: string): Promise<Float32Array | null> {
   const pipe = await loadModel();
+
+  // ONNX init failed — return null instead of crashing.
+  if (pipe === null) {
+    console.warn(
+      `[EmbeddingService] embed() called but model is unavailable (ONNX init failed). Returning null.`
+    );
+    return null;
+  }
 
   // pooling: "mean" → average token embeddings (standard for sentence similarity)
   // normalize: true → L2-normalize the output so cosine similarity = dot product
@@ -140,13 +208,26 @@ export async function embed(text: string): Promise<Float32Array> {
 /**
  * Encodes multiple texts in a single batch.
  *
+ * Returns `null` when the ONNX model failed to initialize.
+ * Callers MUST check for `null` before using the result.
+ *
  * @param texts - Array of input strings.
- * @returns An array of `Float32Array` vectors, one per input text.
+ * @returns An array of `Float32Array` vectors, one per input text, or `null`
+ *          if the embedding service is unavailable.
  */
-export async function embedBatch(texts: string[]): Promise<Float32Array[]> {
+export async function embedBatch(texts: string[]): Promise<Float32Array[] | null> {
   if (texts.length === 0) return [];
 
   const pipe = await loadModel();
+
+  // ONNX init failed — return null instead of crashing.
+  if (pipe === null) {
+    console.warn(
+      `[EmbeddingService] embedBatch() called but model is unavailable (ONNX init failed). Returning null.`
+    );
+    return null;
+  }
+
   const output = await pipe(texts, { pooling: "mean", normalize: true });
 
   return batchToFloat32Arrays(output, texts.length);
@@ -374,6 +455,9 @@ async function warmUpCategoryEmbeddings(): Promise<void> {
   const descriptions = pending.map(([, def]) => def.description);
   const embeddings = await embedBatch(descriptions);
 
+  // embedBatch returns null when ONNX init failed — skip population silently.
+  if (embeddings === null) return;
+
   pending.forEach(([, def], idx) => {
     def.embedding = embeddings[idx] ?? null;
   });
@@ -391,6 +475,11 @@ async function warmUpCategoryEmbeddings(): Promise<void> {
  * 2. Embeds the model text (`modelName + ". " + description`).
  * 3. Computes cosine similarity between the model vector and each anchor.
  * 4. Normalises similarities to [0, 1] and returns them sorted descending.
+ *
+ * When the ONNX embedding service is unavailable (production environment,
+ * missing native bindings), the function automatically falls back to the
+ * Gemini LLM-based categorizer (`lib/ai/llm-categorizer.ts`) so that callers
+ * always receive meaningful capabilities rather than all-zero scores.
  *
  * @param modelName   Human-readable or canonical model ID (e.g. "claude-sonnet-4-5").
  * @param description Short description of the model's capabilities (may be empty).
@@ -410,6 +499,15 @@ export async function categorizeModel(
     );
   }
 
+  // ── LLM fallback: when ONNX is unavailable, delegate to Gemini ────────────
+  // This covers production deployments where @xenova/transformers / OrtRuntime
+  // native bindings cannot be loaded.  The LLM categorizer returns the same
+  // ModelCapabilities shape so all downstream callers are unaffected.
+  if (!isEmbeddingServiceAvailable()) {
+    const { categorizeModelViaLLM } = await import("@/lib/ai/llm-categorizer");
+    return categorizeModelViaLLM(modelName, description);
+  }
+
   // Build the text to embed: combine name + description for richer signal.
   const modelText = description.trim()
     ? `${modelName}. ${description.trim()}`
@@ -421,13 +519,31 @@ export async function categorizeModel(
     warmUpCategoryEmbeddings(),
   ]);
 
+  // ONNX init failed after initial availability check — embed() returns null.
+  // Fall back to LLM categorizer for a meaningful result instead of all-zeros.
+  if (modelEmbedding === null) {
+    const { categorizeModelViaLLM } = await import("@/lib/ai/llm-categorizer");
+    return categorizeModelViaLLM(modelName, description);
+  }
+
   // Compute cosine similarities against all category anchors.
   const rawSimilarities: Array<{ category: string; similarity: number }> = [];
 
   for (const category of Object.keys(CAPABILITY_DEFINITIONS)) {
-    const categoryEmbedding = CAPABILITY_DEFINITIONS[category]!.embedding!;
+    const categoryEmbedding = CAPABILITY_DEFINITIONS[category]!.embedding;
+    // categoryEmbedding may be null if warm-up was skipped (ONNX unavailable)
+    if (categoryEmbedding === null) continue;
     const similarity = cosineSimilarity(modelEmbedding, categoryEmbedding);
     rawSimilarities.push({ category, similarity });
+  }
+
+  // If no category anchors were computed (all null), return zero confidence.
+  if (rawSimilarities.length === 0) {
+    const zeroCategories = Object.keys(CAPABILITY_DEFINITIONS).map((category) => ({
+      category,
+      confidence: 0,
+    }));
+    return { categories: zeroCategories, overallConfidence: 0 };
   }
 
   // Sort descending by raw similarity.

@@ -134,13 +134,28 @@ function MaintenanceButton({
 interface SystemMaintenanceSectionProps {
   /** Called after a successful Force Sync so the parent can refresh its stats. */
   onSyncComplete?: () => Promise<void>;
+  /**
+   * Admin gate — when false (default) the section is hidden entirely.
+   * Pass `true` to reveal maintenance actions to verified admins.
+   * Defaults to checking NEXT_PUBLIC_ADMIN_MODE env var as a simple guard.
+   */
+  isAdmin?: boolean;
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function SystemMaintenanceSection({
   onSyncComplete,
+  isAdmin,
 }: SystemMaintenanceSectionProps) {
+  // Resolve admin status: prop takes precedence; fallback to env var flag.
+  const adminEnabled =
+    isAdmin ??
+    (typeof process !== "undefined" &&
+      process.env.NEXT_PUBLIC_ADMIN_MODE === "true");
+
+  // Non-admins see nothing — section is hidden entirely.
+  if (!adminEnabled) return null;
   // Individual action states
   const [syncState, setSyncState] = useState<ActionState>({ status: "idle", message: "" });
   const [clearState, setClearState] = useState<ActionState>({ status: "idle", message: "" });

@@ -2,6 +2,7 @@
 
 import { LayoutGrid, List, Table, Minimize2 } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
+import { useLanguage } from "@/lib/i18n/LanguageProvider";
 
 export type ViewMode = 'grid' | 'list' | 'table' | 'compact';
 
@@ -12,11 +13,13 @@ interface ViewModeSelectorProps {
 }
 
 export function ViewModeSelector({ mode, onChange, className }: ViewModeSelectorProps) {
+  const { t } = useLanguage();
+
   const modes: { id: ViewMode; icon: React.ReactNode; label: string }[] = [
-    { id: 'grid', icon: <LayoutGrid size={14} />, label: 'Grid' },
-    { id: 'list', icon: <List size={14} />, label: 'List' },
-    { id: 'table', icon: <Table size={14} />, label: 'Table' },
-    { id: 'compact', icon: <Minimize2 size={14} />, label: 'Compact' },
+    { id: 'grid', icon: <LayoutGrid size={14} />, label: t("optimizer", "viewGrid") },
+    { id: 'list', icon: <List size={14} />, label: t("optimizer", "viewList") },
+    { id: 'table', icon: <Table size={14} />, label: t("optimizer", "viewTable") },
+    { id: 'compact', icon: <Minimize2 size={14} />, label: t("optimizer", "viewCompact") },
   ];
 
   return (

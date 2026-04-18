@@ -32,6 +32,8 @@ services:
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
       - NEXT_PUBLIC_APP_URL=http://sdd.rdktech.us
       - NODE_ENV=production
+      - SCORING_VERSION=${SCORING_VERSION:-v3}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-dev-admin-password}
     depends_on:
       postgres:
         condition: service_healthy

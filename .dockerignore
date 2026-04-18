@@ -39,4 +39,4 @@ documentos-para-contexto/
 *.md
 
 # Prisma migrations (applied separately, not baked into image)
-prisma/migrations/
+# prisma/migrations/

@@ -131,10 +131,60 @@ export interface OptimizeRequest {
   customPhases?: CustomSddPhase[];
 }
 
+// ─── Debug Info (exposed when ?debug=true) ─────────────────────────────────
+
+/**
+ * Per-dimension score breakdown for a single model × phase pair.
+ * Only available when the V4 scoring engine is active.
+ */
+export interface DimensionBreakdownSummary {
+  raw: number;
+  weight: number;
+  contribution: number;
+}
+
+/**
+ * Debug information returned by /api/optimize when ?debug=true.
+ * Allows inspecting the scoring engine's reasoning without polluting
+ * the default payload.
+ */
+export interface DebugInfo {
+  /**
+   * The scoring engine version that actually produced the recommendation.
+   * May differ from the requested version when a fallback occurred.
+   */
+  resolvedScoringVersion: "v2" | "v3" | "v4";
+  /**
+   * Whether the engine fell back to a lower version and why.
+   */
+  fallback: {
+    v3Attempted: boolean;
+    usedFallback: boolean;
+    reason: string;
+  };
+  /**
+   * Per-model V4 score breakdown, keyed by modelId.
+   * null when the V4 engine was not used (V2 or V3 mode).
+   */
+  scoreBreakdown: Record<string, Record<string, DimensionBreakdownSummary>> | null;
+  /**
+   * Special rules applied per model, keyed by modelId.
+   * null when the V4 engine was not used.
+   */
+  specialRulesApplied: Record<string, string[]> | null;
+}
+
 export interface OptimizeResponse {
   success: true;
   jobId: string;
   data: TeamRecommendation;
+  /**
+   * The scoring engine version that produced this recommendation.
+   * Reflects the actual engine used (may differ from requested when fallback occurs).
+   */
+  scoringVersion: "v2" | "v3" | "v4";
+  /** Scoring engine debug info. Only present when ?debug=true is passed. */
+  debug?: DebugInfo;
 }
 
 export interface OptimizeErrorResponse {
@@ -237,4 +287,75 @@ export interface CustomPhaseInput {
   displayName: string;
   description?: string;
   categoryWeights: Record<string, number>;
+}
+
+// ─── OIM — Unified Model Matrix ────────────────────────────────────────────
+
+/**
+ * Source of truth for a UnifiedModelScores snapshot.
+ * Mirrors the Prisma `ScoreSource` enum.
+ */
+export type ScoreSource =
+  | "ARENA"               // LM Arena leaderboard data
+  | "ARTIFICIAL_ANALYSIS" // ArtificialAnalysis.ai benchmarks
+  | "WEB_INFERRED";       // AI-inferred from web / embedding heuristics
+
+/**
+ * Multi-dimensional score record for a single model snapshot.
+ * Mirrors the Prisma `UnifiedModelScores` model.
+ */
+export interface UnifiedModelScores {
+  id: string;
+  modelId: string;
+
+  /** Source that produced this score snapshot */
+  source: ScoreSource;
+  /** Date of the benchmark snapshot used as the historical anchor */
+  snapshotDate: Date;
+
+  /** Coding / programming capability score (0.0 – 1.0) */
+  codingScore: number | null;
+  /** Reasoning / thinking capability score (0.0 – 1.0) */
+  thinkingScore: number | null;
+  /** Design / creativity capability score (0.0 – 1.0) */
+  designScore: number | null;
+  /** Instruction-following capability score (0.0 – 1.0) */
+  instructionScore: number | null;
+
+  /** Context-efficiency metric — how well the model uses its context window (0.0 – 1.0) */
+  contextEfficiency: number | null;
+
+  /** Raw source payload, kept for reprocessing / debugging */
+  rawData: Record<string, unknown> | null;
+
+  syncedAt: Date;
+}
+
+/**
+ * Input shape used by `upsertUnifiedScores()` in the OIM service.
+ * `id` and `syncedAt` are generated server-side.
+ */
+export interface UnifiedModelScoresData {
+  modelId: string;
+  source: ScoreSource;
+  snapshotDate: Date;
+
+  codingScore?: number | null;
+  thinkingScore?: number | null;
+  designScore?: number | null;
+  instructionScore?: number | null;
+  contextEfficiency?: number | null;
+  rawData?: Record<string, unknown> | null;
+}
+
+/**
+ * Lightweight summary returned after a successful upsert operation.
+ */
+export interface UnifiedModelScoresUpsertResult {
+  id: string;
+  modelId: string;
+  source: ScoreSource;
+  snapshotDate: Date;
+  /** `true` if a new record was created, `false` if an existing one was updated */
+  created: boolean;
 }
